@@ -1,0 +1,38 @@
+# Focused validation for the disambiguation-unseen cluster fixes:
+#  - Cluster C: placeholder-argument validation (dis_29, r_tool_execution)
+#  - Cluster A: preference-enrichment rule (dis_25/47/49)
+# Controls: base_5/9 (guessing), dis_7/13 (preference scalar, run-level flippers),
+# dis_33 (resolve-from-state), dis_45 (user-clarification class, parked — watch only),
+# hall_13/19 (hallucination sensitivity to prompt changes).
+
+[evaluator]
+endpoint = "http://127.0.0.1:8081"
+cmd = "python src/evaluator/server.py --host 127.0.0.1 --port 8081"
+
+[agent_under_test]
+endpoint = "http://127.0.0.1:8080"
+cmd = "python src/track_2_agent_under_test_cerebras/server.py --host 127.0.0.1 --port 8080"
+
+[config]
+num_trials = 3
+task_split = "test"
+tasks_base_num_tasks = -1
+tasks_hallucination_num_tasks = -1
+tasks_disambiguation_num_tasks = -1
+max_steps = 50
+
+tasks_base_task_id_filter = ["base_5", "base_9"]
+tasks_hallucination_task_id_filter = ["hallucination_13", "hallucination_19"]
+tasks_disambiguation_task_id_filter = [
+  "disambiguation_25", "disambiguation_29", "disambiguation_47", "disambiguation_49",
+  "disambiguation_7", "disambiguation_13", "disambiguation_33", "disambiguation_45",
+]
+
+# User-Simulator via OpenRouter BYOK -> Google Vertex (OPENROUTER_API_KEY in .env)
+user_model = "openrouter/google/gemini-2.5-flash"
+user_provider = "openrouter"
+user_thinking = false
+
+# Policy-Judge ebenfalls ueber OpenRouter BYOK -> Google Vertex.
+policy_evaluator_model = "openrouter/google/gemini-2.5-flash"
+policy_evaluator_provider = "openrouter"

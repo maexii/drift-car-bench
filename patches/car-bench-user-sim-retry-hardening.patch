@@ -1,0 +1,25 @@
+diff --git a/car_bench/envs/user/user.py b/car_bench/envs/user/user.py
+index 23a14dc..2b7b5a7 100644
+--- a/car_bench/envs/user/user.py
++++ b/car_bench/envs/user/user.py
+@@ -72,7 +72,10 @@ class LLMUserSimulationEnv(BaseUserSimulationEnv):
+         except Exception as e:
+             print(f"Error checking end conversation failure: {e}")
+ 
+-        for _ in range(2):
++        import os as _os
++        _attempts = max(2, int(_os.getenv("CAR_BENCH_USER_RETRY_ATTEMPTS", "2")))
++        _sleeps = [float(x) for x in _os.getenv("CAR_BENCH_USER_RETRY_SLEEP_SECONDS", "120").split(",")]
++        for _retry_index in range(_attempts):
+             try:
+                 completion_kwargs = {
+                     "model": self.model,
+@@ -94,7 +97,7 @@ class LLMUserSimulationEnv(BaseUserSimulationEnv):
+                 break
+             except Exception as e:
+                 print(f"Error parsing user output: {e}")
+-                time.sleep(120)
++                time.sleep(_sleeps[min(_retry_index, len(_sleeps) - 1)])
+                 messages[-1][
+                     "content"
+                 ] += f"\n\nLast generated message was not a valid user output: {e}. Try again."
