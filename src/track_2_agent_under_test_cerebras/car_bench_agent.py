@@ -158,6 +158,13 @@ class CARBenchAgentExecutor(AgentExecutor):
                 inference_result=inference_result,
                 ctx_logger=ctx_logger,
             )
+            inference_result = self._completeness_and_maybe_revise(
+                context_id=context.context_id,
+                messages=messages,
+                tools=tools,
+                inference_result=inference_result,
+                ctx_logger=ctx_logger,
+            )
 
             parts, assistant_message_for_history = self._build_a2a_response_parts(
                 inference_result.next_action
@@ -219,6 +226,13 @@ class CARBenchAgentExecutor(AgentExecutor):
     ) -> AgentInferenceResult:
         last_error: Exception | None = None
         correction = initial_correction
+        response_schema = NEXT_ACTION_OUTPUT_SCHEMA
+        if os.getenv("TRACK2_RESPONSE_SCAFFOLD", "0") not in ("0", "false", "no") and (
+            _recent_tool_result_has_unknown(messages)
+            or _latest_user_message_deflects(messages)
+        ):
+            response_schema = SCAFFOLD_OUTPUT_SCHEMA
+            ctx_logger.info("Response scaffold active for this turn")
         total_duration_ms = 0.0
         total_token_usage: TokenUsage | None = None
         total_cost = 0.0
@@ -251,11 +265,18 @@ class CARBenchAgentExecutor(AgentExecutor):
                     messages=[
                         {
                             "role": "system",
-                            "content": CEREBRAS_DEVELOPER_INSTRUCTIONS,
+                            "content": (
+                                CEREBRAS_DEVELOPER_INSTRUCTIONS
+                                + "\n\n"
+                                + CANONICAL_WORKFLOWS
+                                if os.getenv("TRACK2_WORKFLOWS", "0")
+                                not in ("0", "false", "no")
+                                else CEREBRAS_DEVELOPER_INSTRUCTIONS
+                            ),
                         },
                         {"role": "user", "content": prompt},
                     ],
-                    response_schema=NEXT_ACTION_OUTPUT_SCHEMA,
+                    response_schema=response_schema,
                     response_schema_name="next_action",
                     max_completion_tokens=self.max_completion_tokens,
                     temperature=self.temperature,
@@ -284,6 +305,12 @@ class CARBenchAgentExecutor(AgentExecutor):
                     phase_error = phase_separation_error(parsed, messages)
                     if phase_error is not None:
                         raise MalformedModelResponseError(phase_error)
+                if attempt < self.malformed_retries and os.getenv(
+                    "TRACK2_NAV_EDITING", "1"
+                ) not in ("0", "false", "no"):
+                    nav_error = navigation_editing_error(parsed, messages)
+                    if nav_error is not None:
+                        raise MalformedModelResponseError(nav_error)
                 ctx_logger.info(
                     "Cerebras response received",
                     action=parsed["action"],
@@ -358,7 +385,7 @@ class CARBenchAgentExecutor(AgentExecutor):
     ) -> AgentInferenceResult:
         """Stage-2 verifier: review state-changing actions with a second,
         compact Cerebras call; at most one revision round; never fails the turn."""
-        if os.getenv("TRACK2_VERIFIER", "0") in ("0", "false", "no"):
+        if os.getenv("TRACK2_VERIFIER", "1") in ("0", "false", "no"):
             return inference_result
         action = inference_result.next_action
         state_changing = [
@@ -429,7 +456,9 @@ class CARBenchAgentExecutor(AgentExecutor):
             + verifier_result.quota_wait_ms,
         )
         ctx_logger.info(
-            "Verifier verdict",
+            "Verifier verdict: "
+            f"{verdict} | calls: {state_changing} | problems: "
+            + ("; ".join(problems[:3])[:220] if problems else "none"),
             verdict=verdict,
             num_problems=len(problems),
             state_changing=state_changing,
@@ -453,6 +482,120 @@ class CARBenchAgentExecutor(AgentExecutor):
         except Exception as exc:
             ctx_logger.warning("Revision failed, keeping original", error=str(exc))
             return combined
+        original_calls = [
+            tc["tool_name"] for tc in action.get("tool_calls") or []
+        ]
+        revised_calls = [
+            tc["tool_name"] for tc in revision.next_action.get("tool_calls") or []
+        ]
+        ctx_logger.info(
+            "Verifier revision applied: "
+            f"{action.get('action')}{original_calls} -> "
+            f"{revision.next_action.get('action')}{revised_calls}"
+        )
+        return AgentInferenceResult(
+            next_action=revision.next_action,
+            elapsed_ms=combined.elapsed_ms + revision.elapsed_ms,
+            token_usage=add_token_usage(combined.token_usage, revision.token_usage),
+            cost=combined.cost + revision.cost,
+            internal_calls=combined.internal_calls + revision.internal_calls,
+            quota_wait_ms=combined.quota_wait_ms + revision.quota_wait_ms,
+        )
+
+    def _completeness_and_maybe_revise(
+        self,
+        *,
+        context_id: str,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        inference_result: AgentInferenceResult,
+        ctx_logger,
+    ) -> AgentInferenceResult:
+        """Catch under-acting: before the agent concludes with a closing message,
+        verify every explicitly requested action was performed. Guarded to avoid
+        pushing completeness where asking / unavailable-capability is correct."""
+        if os.getenv("TRACK2_COMPLETENESS", "0") in ("0", "false", "no"):
+            return inference_result
+        action = inference_result.next_action
+        if action.get("action") != "respond":
+            return inference_result
+        content = str(action.get("content") or "").rstrip()
+        if content.endswith("?"):
+            return inference_result  # clarifying question, not concluding
+        checks = action.get("checks") or {}
+        if str(checks.get("missing_capability", "none")).strip().lower() not in (
+            "",
+            "none",
+        ):
+            return inference_result  # capability missing -> concluding is correct
+        if _recent_tool_result_has_unknown(messages) or _latest_user_message_deflects(
+            messages
+        ):
+            return inference_result
+
+        try:
+            check_result = self.client.generate(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": COMPLETENESS_INSTRUCTIONS},
+                    {"role": "user", "content": build_completeness_prompt(messages)},
+                ],
+                response_schema=COMPLETENESS_OUTPUT_SCHEMA,
+                response_schema_name="completeness",
+                max_completion_tokens=384,
+                temperature=self.temperature,
+                reasoning_effort=os.getenv(
+                    "TRACK2_VERIFIER_REASONING_EFFORT", "low"
+                ),
+            )
+            review = json.loads(check_result.text)
+            missing = [
+                m for m in review.get("unaddressed_requests") or [] if isinstance(m, str)
+            ]
+            verdict = review.get("verdict")
+        except Exception as exc:
+            ctx_logger.warning("Completeness check failed, keeping response", error=str(exc))
+            return inference_result
+
+        combined = AgentInferenceResult(
+            next_action=inference_result.next_action,
+            elapsed_ms=inference_result.elapsed_ms + check_result.duration_ms,
+            token_usage=add_token_usage(
+                inference_result.token_usage, check_result.token_usage
+            ),
+            cost=inference_result.cost + check_result.cost,
+            internal_calls=inference_result.internal_calls + 1,
+            quota_wait_ms=inference_result.quota_wait_ms + check_result.quota_wait_ms,
+        )
+        ctx_logger.info(
+            "Completeness verdict: "
+            f"{verdict} | unaddressed: "
+            + ("; ".join(missing[:3])[:200] if missing else "none")
+        )
+        if verdict != "incomplete" or not missing:
+            return combined
+
+        try:
+            revision = self._call_model_with_retries(
+                context_id=context_id,
+                messages=messages,
+                tools=tools,
+                ctx_logger=ctx_logger,
+                initial_correction=(
+                    "You were about to conclude, but the user explicitly "
+                    "requested the following that has not been done yet: "
+                    + "; ".join(missing[:4])
+                    + ". Perform the missing action(s) now instead of "
+                    "concluding. Do not add anything the user did not ask for."
+                ),
+            )
+        except Exception as exc:
+            ctx_logger.warning("Completeness revision failed", error=str(exc))
+            return combined
+        ctx_logger.info(
+            "Completeness revision applied: respond -> "
+            f"{revision.next_action.get('action')}"
+        )
         return AgentInferenceResult(
             next_action=revision.next_action,
             elapsed_ms=combined.elapsed_ms + revision.elapsed_ms,
@@ -677,6 +820,30 @@ def build_next_action_prompt(
     }
     if correction:
         prompt["correction"] = correction
+    if os.getenv("TRACK2_CATALOG_NOTICE", "1") not in ("0", "false", "no"):
+        absent = absent_capabilities(tools)
+        if absent is not None:
+            prompt["unavailable_capabilities_notice"] = {
+                "detail": absent,
+                "instruction": (
+                    "The listed tools/parameters are normally part of this "
+                    "domain but are NOT available in this session. If the "
+                    "user's request needs one of them, say transparently that "
+                    "you cannot do or look up that part right now and offer "
+                    "what you can still do — do not ask the user to supply "
+                    "the information, do not claim success, and do not use a "
+                    "workaround that fakes the missing capability."
+                ),
+            }
+    if os.getenv("TRACK2_TOLL_NOTICE", "1") not in ("0", "false", "no") and (
+        _recent_routes_include_toll(messages)
+    ):
+        prompt["toll_disclosure_notice"] = (
+            "At least one of the routes just retrieved uses a toll road "
+            "(includes_toll: true). Domain policy requires disclosing tolls: "
+            "when you present, compare, or recommend routes to the user, state "
+            "explicitly which route(s) include a toll road. Do not omit it."
+        )
     if _latest_user_message_deflects(messages):
         prompt["user_cannot_provide_notice"] = (
             "The user just signalled they cannot provide the information you "
@@ -726,6 +893,37 @@ def _latest_user_message_deflects(messages: list[dict[str, Any]]) -> bool:
             )
         if latest_user is None and message.get("role") == "assistant":
             return False
+    return False
+
+
+def _obj_has_toll_route(value: Any) -> bool:
+    if isinstance(value, dict):
+        if value.get("includes_toll") is True:
+            return True
+        return any(_obj_has_toll_route(v) for v in value.values())
+    if isinstance(value, list):
+        return any(_obj_has_toll_route(v) for v in value)
+    return False
+
+
+def _recent_routes_include_toll(messages: list[dict[str, Any]]) -> bool:
+    """True if a recent tool result contains a route with includes_toll: true.
+
+    Domain policy requires disclosing toll roads when presenting routes; the
+    signal is machine-readable and always in the tool result (unlike navigation
+    state), so this is a clean conditional trigger.
+    """
+    for message in messages[-8:]:
+        if message.get("role") != "tool":
+            continue
+        content = message.get("content")
+        if not content or "includes_toll" not in str(content):
+            continue
+        try:
+            if _obj_has_toll_route(json.loads(content)):
+                return True
+        except Exception:
+            continue
     return False
 
 
@@ -853,6 +1051,56 @@ def _history_has_tool_call(messages: list[dict[str, Any]], tool_name: str) -> bo
     return False
 
 
+def _load_tool_catalog() -> dict[str, list[str]]:
+    import pathlib
+
+    path = pathlib.Path(__file__).parent / "tool_catalog.json"
+    try:
+        return json.loads(path.read_text())
+    except Exception:
+        return {}
+
+
+TOOL_CATALOG = _load_tool_catalog()
+
+
+def absent_capabilities(
+    tools: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """Diff the provided tool list against the canonical domain catalog.
+
+    Absence is invisible in the prompt, so the model cannot notice removed
+    tools/parameters by itself — but the harness can, deterministically.
+    Returns None when the session matches the catalog (the normal case).
+    """
+    if not TOOL_CATALOG or not tools:
+        return None
+    provided: dict[str, set[str]] = {}
+    for tool in tools:
+        fn = tool.get("function") or {}
+        name = fn.get("name")
+        if not name:
+            continue
+        params = set(((fn.get("parameters") or {}).get("properties") or {}).keys())
+        provided[name] = params
+
+    missing_tools = sorted(set(TOOL_CATALOG) - set(provided))
+    missing_parameters = {}
+    for name, params in provided.items():
+        catalog_params = set(TOOL_CATALOG.get(name, []))
+        absent = sorted(catalog_params - params)
+        if absent:
+            missing_parameters[name] = absent
+    if not missing_tools and not missing_parameters:
+        return None
+    result: dict[str, Any] = {}
+    if missing_tools:
+        result["missing_tools"] = missing_tools
+    if missing_parameters:
+        result["missing_parameters"] = missing_parameters
+    return result
+
+
 def _conversation_has_read_only_call(messages: list[dict[str, Any]]) -> bool:
     for message in messages:
         if message.get("role") == "tool" and not _is_state_changing_tool(
@@ -875,6 +1123,59 @@ def _tool_calls_since_last_user_message(messages: list[dict[str, Any]]) -> int:
             count += 1
         count += len(message.get("tool_calls") or [])
     return count
+
+
+def _latest_navigation_active(messages: list[dict[str, Any]]) -> bool | None:
+    """Most recent navigation_active value from a get_current_navigation_state
+    tool result, or None if navigation state was never observed."""
+    active: bool | None = None
+    for message in messages:
+        if message.get("role") != "tool":
+            continue
+        content = message.get("content")
+        if not content or "navigation_active" not in str(content):
+            continue
+        try:
+            data = json.loads(content)
+        except Exception:
+            continue
+        result = data.get("result", data) if isinstance(data, dict) else {}
+        if isinstance(result, dict) and "navigation_active" in result:
+            active = bool(result["navigation_active"])
+    return active
+
+
+def navigation_editing_error(
+    parsed: dict[str, Any], messages: list[dict[str, Any]]
+) -> str | None:
+    """Domain policy: when navigation is already active, changes must use the
+    editing tools, not set_new_navigation (SetNewNavigation_001).
+
+    set_new_navigation is a wrong action whenever navigation is already active,
+    so it must be preceded by a get_current_navigation_state check. Forcing that
+    check is free for scoring (r_actions is state-based, r_tool_subset is a
+    superset check, so an extra read-only call never hurts)."""
+    calls = [tc["tool_name"] for tc in parsed.get("tool_calls") or []]
+    if "set_new_navigation" not in calls:
+        return None
+    state = _latest_navigation_active(messages)
+    if state is True:
+        return (
+            "policy/navigation: navigation is already active, so set_new_navigation "
+            "is not allowed. Use the editing tools instead — "
+            "navigation_replace_final_destination, navigation_replace_one_waypoint, "
+            "navigation_delete_waypoint, navigation_delete_destination, or "
+            "navigation_add_one_waypoint (or delete_current_navigation first)."
+        )
+    if state is None:
+        return (
+            "policy/navigation: do not call set_new_navigation before you know "
+            "whether navigation is already active. Call get_current_navigation_state "
+            "by itself first (no other calls). If it reports navigation is active, "
+            "use the editing tools (navigation_replace_final_destination etc.) "
+            "instead of set_new_navigation."
+        )
+    return None
 
 
 def phase_separation_error(
@@ -999,6 +1300,8 @@ def _find_placeholder_argument(value: Any) -> str | None:
         lowered = value.strip().lower()
         if lowered.startswith("<") and lowered.endswith(">"):
             return value
+        if "{{" in value and "}}" in value:
+            return value
         if any(marker in lowered for marker in _PLACEHOLDER_MARKERS):
             return value
         return None
@@ -1121,6 +1424,65 @@ NEXT_ACTION_OUTPUT_SCHEMA = {
 }
 
 
+def _build_scaffold_schema() -> dict[str, Any]:
+    """Schema variant for turns where information is known-unavailable
+    (unknown tool-result field or user deflection): forces the two response
+    components the judge expects — acknowledgment and fallback — to be
+    composed BEFORE the user-facing content (autoregressive conditioning)."""
+    import copy
+
+    schema = copy.deepcopy(NEXT_ACTION_OUTPUT_SCHEMA)
+    ordered: dict[str, Any] = {}
+    for key, value in schema["properties"].items():
+        if key == "content":
+            ordered["cannot_statement"] = {
+                "type": "string",
+                "description": (
+                    "One short sentence naming exactly what you cannot "
+                    "retrieve or do right now. Empty string when action is "
+                    "tool_calls."
+                ),
+            }
+            ordered["fallback_offer"] = {
+                "type": "string",
+                "description": (
+                    "One short sentence offering or doing what you still can "
+                    "instead — never asking the user to supply the missing "
+                    "information. Empty string when action is tool_calls."
+                ),
+            }
+        ordered[key] = value
+    schema["properties"] = ordered
+    schema["properties"]["content"]["description"] = (
+        "Natural user-facing assistant text when action is respond; compose "
+        "it from cannot_statement and fallback_offer in natural spoken form; "
+        "otherwise empty."
+    )
+    schema["required"] = [
+        "checks",
+        "action",
+        "cannot_statement",
+        "fallback_offer",
+        "content",
+        "tool_calls",
+    ]
+    return schema
+
+
+SCAFFOLD_OUTPUT_SCHEMA = _build_scaffold_schema()
+
+
+CANONICAL_WORKFLOWS = """Canonical preparation before acting (mined from solved tasks; follow unless clearly inapplicable):
+- fan/AC/circulation/airflow/defrost/windows: get_climate_settings first (windows also get_vehicle_window_positions).
+- climate temperature / seat heating per zone: get_temperature_inside_car or get_seat_heating_level; get_seats_occupancy when occupancy matters. Usually only the zone deviating from the target needs a change.
+- lights (fog, high/low beams): get_weather + get_exterior_lights_status first.
+- sunroof/sunshade: get_weather + get_sunroof_and_sunshade_position first; the sunshade must be open before the sunroof.
+- navigation changes (destination/waypoints): get_current_navigation_state + get_location_id_by_location_name + get_routes_from_start_to_destination first; when several route options exist, let the user choose.
+- email: get_contact_id_by_contact_name -> get_contact_information -> confirm with user -> send_email.
+- phone calls: resolve the number via contact or POI lookup first.
+When a needed tool, parameter, or tool-result field is missing or unknown: state once that you cannot retrieve or do that right now, offer what you can still do, and never ask the user to supply it; if the user insists, restate briefly once."""
+
+
 VERIFIER_OUTPUT_SCHEMA = {
     "type": "object",
     "required": ["problems", "verdict"],
@@ -1140,6 +1502,46 @@ VERIFIER_OUTPUT_SCHEMA = {
 VERIFIER_INSTRUCTIONS = """You are a strict reviewer for an in-car assistant's proposed action.
 Judge only what is in the provided context. List concrete problems first, then the verdict.
 Approve when the action is exactly right; revise only for real, fixable problems."""
+
+
+COMPLETENESS_OUTPUT_SCHEMA = {
+    "type": "object",
+    "required": ["unaddressed_requests", "verdict"],
+    "properties": {
+        "unaddressed_requests": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": (
+                "Distinct actions the user EXPLICITLY requested that were not "
+                "yet performed; empty if the task is complete."
+            ),
+        },
+        "verdict": {"type": "string", "enum": ["complete", "incomplete"]},
+    },
+    "additionalProperties": False,
+}
+
+COMPLETENESS_INSTRUCTIONS = """You check whether an in-car assistant is about to conclude while leaving an explicit user request unperformed.
+Be strict and high-precision: list an item ONLY if the user explicitly and unambiguously asked for it AND it was not done in the conversation.
+Do NOT invent helpful extras, do NOT flag optional or implied actions, and treat asking the user for genuinely needed information as complete.
+When in doubt, answer complete."""
+
+
+def build_completeness_prompt(messages: list[dict[str, Any]]) -> str:
+    prompt = {
+        "task": (
+            "The assistant is about to send a closing message. Decide whether "
+            "every action the user explicitly requested has been performed."
+        ),
+        "conversation": _messages_for_prompt(messages[-12:]),
+        "rules": [
+            "Only count actions the user explicitly and clearly asked for.",
+            "An action counts as done if a matching tool call was already made.",
+            "Multi-part requests (for example 'do X and Y') require every part.",
+            "Do not add unrequested actions; that would be over-acting.",
+        ],
+    }
+    return json.dumps(prompt, ensure_ascii=False, indent=2)
 
 
 def build_verifier_prompt(

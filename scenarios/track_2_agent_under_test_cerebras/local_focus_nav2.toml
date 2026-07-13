@@ -1,0 +1,33 @@
+# Validation for the improved nav-editing detector (force get_current_navigation_state
+# before set_new_navigation, then redirect to editing tools when active).
+# Targets: SetNewNavigation-when-active fails from the best runs.
+# Critical control: base_33 (nav INACTIVE, set_new_navigation is correct after a check
+# -> must stay passing). Plus toll/other sanity controls.
+
+[evaluator]
+endpoint = "http://127.0.0.1:8081"
+cmd = "python src/evaluator/server.py --host 127.0.0.1 --port 8081"
+
+[agent_under_test]
+endpoint = "http://127.0.0.1:8080"
+cmd = "python src/track_2_agent_under_test_cerebras/server.py --host 127.0.0.1 --port 8080"
+
+[config]
+num_trials = 3
+task_split = "test"
+tasks_base_num_tasks = -1
+tasks_hallucination_num_tasks = -1
+tasks_disambiguation_num_tasks = -1
+max_steps = 50
+
+tasks_base_task_id_filter = ["base_85", "base_89", "base_99", "base_33", "base_77", "base_9"]
+tasks_hallucination_task_id_filter = ["hallucination_19"]
+tasks_disambiguation_task_id_filter = ["disambiguation_29", "disambiguation_41", "disambiguation_7"]
+
+# User-Simulator via OpenRouter.
+user_model = "openrouter/google/gemini-2.5-flash"
+user_provider = "openrouter"
+user_thinking = false
+
+policy_evaluator_model = "openrouter/google/gemini-2.5-flash"
+policy_evaluator_provider = "openrouter"

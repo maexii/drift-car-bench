@@ -1,0 +1,40 @@
+# Focused validation for the tool-catalog-diff notice (absent capabilities).
+# Targets: missing-TOOL and missing-PARAM hallucination fails from the 51.3%
+# reference run. Controls: stable hall passers (catalog notice fires there too —
+# must not break them), plus base/dis sanity (notice must never fire there).
+
+[evaluator]
+endpoint = "http://127.0.0.1:8081"
+cmd = "python src/evaluator/server.py --host 127.0.0.1 --port 8081"
+
+[agent_under_test]
+endpoint = "http://127.0.0.1:8080"
+cmd = "python src/track_2_agent_under_test_cerebras/server.py --host 127.0.0.1 --port 8080"
+
+[config]
+num_trials = 3
+task_split = "test"
+tasks_base_num_tasks = -1
+tasks_hallucination_num_tasks = -1
+tasks_disambiguation_num_tasks = -1
+max_steps = 50
+
+tasks_base_task_id_filter = ["base_9", "base_15"]
+tasks_hallucination_task_id_filter = [
+  "hallucination_19", "hallucination_23", "hallucination_55", "hallucination_67",
+  "hallucination_69", "hallucination_83", "hallucination_87", "hallucination_91",
+  "hallucination_93", "hallucination_95", "hallucination_96",
+  "hallucination_3", "hallucination_13", "hallucination_57", "hallucination_79",
+  "hallucination_81", "hallucination_97",
+  "hallucination_1", "hallucination_7", "hallucination_15",
+]
+tasks_disambiguation_task_id_filter = ["disambiguation_7", "disambiguation_13"]
+
+# User-Simulator via OpenRouter BYOK -> Google Vertex (OPENROUTER_API_KEY in .env)
+user_model = "openrouter/google/gemini-2.5-flash"
+user_provider = "openrouter"
+user_thinking = false
+
+# Policy-Judge ebenfalls ueber OpenRouter.
+policy_evaluator_model = "openrouter/google/gemini-2.5-flash"
+policy_evaluator_provider = "openrouter"

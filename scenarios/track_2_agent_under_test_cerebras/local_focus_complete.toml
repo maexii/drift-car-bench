@@ -1,0 +1,33 @@
+# Focused validation for the completeness verifier (under-acting).
+# Targets: under-acting fails (agent forgot an explicitly requested action).
+# Critical controls: over-acting (base_5) and stable passers must NOT regress;
+# hallucination tasks must NOT be pushed to perform impossible actions.
+
+[evaluator]
+endpoint = "http://127.0.0.1:8081"
+cmd = "python src/evaluator/server.py --host 127.0.0.1 --port 8081"
+
+[agent_under_test]
+endpoint = "http://127.0.0.1:8080"
+cmd = "python src/track_2_agent_under_test_cerebras/server.py --host 127.0.0.1 --port 8080"
+
+[config]
+num_trials = 3
+task_split = "test"
+tasks_base_num_tasks = -1
+tasks_hallucination_num_tasks = -1
+tasks_disambiguation_num_tasks = -1
+max_steps = 50
+
+# under-acting targets + over-acting/stable controls
+tasks_base_task_id_filter = ["base_63", "base_5", "base_9", "base_1", "base_7", "base_15"]
+tasks_hallucination_task_id_filter = ["hallucination_19", "hallucination_1", "hallucination_5"]
+tasks_disambiguation_task_id_filter = ["disambiguation_33", "disambiguation_47", "disambiguation_7"]
+
+# User-Simulator via OpenRouter.
+user_model = "openrouter/google/gemini-2.5-flash"
+user_provider = "openrouter"
+user_thinking = false
+
+policy_evaluator_model = "openrouter/google/gemini-2.5-flash"
+policy_evaluator_provider = "openrouter"

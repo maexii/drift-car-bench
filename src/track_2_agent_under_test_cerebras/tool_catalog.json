@@ -1,0 +1,188 @@
+{
+ "calculate_charging_soc_by_time": [
+  "charging_station_id",
+  "charging_station_plug_id",
+  "charging_time",
+  "start_state_of_charge"
+ ],
+ "calculate_charging_time_by_soc": [
+  "charging_station_id",
+  "charging_station_plug_id",
+  "start_state_of_charge",
+  "target_state_of_charge"
+ ],
+ "calculate_datetime": [
+  "additionalProperties",
+  "original_datetime",
+  "times_to_add"
+ ],
+ "calculate_math": [
+  "expression"
+ ],
+ "call_phone_by_number": [
+  "phone_number"
+ ],
+ "convert_route_distance_and_time": [
+  "distance_km",
+  "route_id",
+  "time_minutes"
+ ],
+ "delete_current_navigation": [],
+ "get_ambient_light_status_and_color": [],
+ "get_car_color": [],
+ "get_charging_specs_and_status": [],
+ "get_climate_settings": [],
+ "get_contact_id_by_contact_name": [
+  "contact_first_name",
+  "contact_last_name"
+ ],
+ "get_contact_information": [
+  "contact_ids"
+ ],
+ "get_current_navigation_state": [
+  "detailed_information"
+ ],
+ "get_distance_by_soc": [
+  "final_state_of_charge",
+  "initial_state_of_charge"
+ ],
+ "get_entries_from_calendar": [
+  "day",
+  "month"
+ ],
+ "get_exterior_lights_status": [],
+ "get_location_id_by_location_name": [
+  "location"
+ ],
+ "get_reading_lights_status": [],
+ "get_routes_from_start_to_destination": [
+  "destination_id",
+  "start_id"
+ ],
+ "get_seat_heating_level": [],
+ "get_seats_occupancy": [],
+ "get_steering_wheel_heating_level": [],
+ "get_sunroof_and_sunshade_position": [],
+ "get_temperature_inside_car": [],
+ "get_trunk_door_position": [],
+ "get_user_preferences": [
+  "preference_categories"
+ ],
+ "get_vehicle_window_positions": [],
+ "get_weather": [
+  "day",
+  "location_or_poi_id",
+  "month",
+  "time_hour_24hformat",
+  "time_minutes"
+ ],
+ "navigation_add_one_waypoint": [
+  "route_id_leading_away_from_new_waypoint",
+  "route_id_leading_to_new_waypoint",
+  "waypoint_id_after_new_waypoint",
+  "waypoint_id_before_new_waypoint",
+  "waypoint_id_to_add"
+ ],
+ "navigation_delete_destination": [
+  "destination_id_to_delete"
+ ],
+ "navigation_delete_waypoint": [
+  "route_id_without_waypoint",
+  "waypoint_id_to_delete"
+ ],
+ "navigation_replace_final_destination": [
+  "new_destination_id",
+  "route_id_leading_to_new_destination"
+ ],
+ "navigation_replace_one_waypoint": [
+  "new_waypoint_id",
+  "route_id_leading_away_from_new_waypoint",
+  "route_id_leading_to_new_waypoint",
+  "waypoint_id_to_replace"
+ ],
+ "open_close_sunroof": [
+  "percentage"
+ ],
+ "open_close_sunshade": [
+  "percentage"
+ ],
+ "open_close_trunk_door": [
+  "action"
+ ],
+ "open_close_window": [
+  "percentage",
+  "window"
+ ],
+ "planning_tool": [
+  "command",
+  "plan_id",
+  "step_updates",
+  "steps",
+  "title"
+ ],
+ "search_poi_along_the_route": [
+  "at_kilometer",
+  "category_poi",
+  "filters",
+  "route_id"
+ ],
+ "search_poi_at_location": [
+  "category_poi",
+  "filters",
+  "location_id"
+ ],
+ "send_email": [
+  "content_message",
+  "email_addresses"
+ ],
+ "set_air_circulation": [
+  "mode"
+ ],
+ "set_air_conditioning": [
+  "on"
+ ],
+ "set_ambient_lights": [
+  "lightcolor",
+  "on"
+ ],
+ "set_climate_temperature": [
+  "seat_zone",
+  "temperature"
+ ],
+ "set_fan_airflow_direction": [
+  "direction"
+ ],
+ "set_fan_speed": [
+  "level"
+ ],
+ "set_fog_lights": [
+  "on"
+ ],
+ "set_head_lights_high_beams": [
+  "on"
+ ],
+ "set_head_lights_low_beams": [
+  "on"
+ ],
+ "set_new_navigation": [
+  "route_ids"
+ ],
+ "set_reading_light": [
+  "on",
+  "position"
+ ],
+ "set_seat_heating": [
+  "level",
+  "seat_zone"
+ ],
+ "set_steering_wheel_heating": [
+  "level"
+ ],
+ "set_window_defrost": [
+  "defrost_window",
+  "on"
+ ],
+ "think": [
+  "thought"
+ ]
+}

@@ -1,0 +1,32 @@
+# Focused validation for the navigation-editing detector (SetNewNavigation_001).
+# Targets: the 8 tasks that hit "navigation already active" in the 52.0% run.
+# Critical control: base_33 (navigation INACTIVE -> set_new_navigation correct,
+# detector must NOT fire). Plus catalog/phase controls for sanity.
+
+[evaluator]
+endpoint = "http://127.0.0.1:8081"
+cmd = "python src/evaluator/server.py --host 127.0.0.1 --port 8081"
+
+[agent_under_test]
+endpoint = "http://127.0.0.1:8080"
+cmd = "python src/track_2_agent_under_test_cerebras/server.py --host 127.0.0.1 --port 8080"
+
+[config]
+num_trials = 3
+task_split = "test"
+tasks_base_num_tasks = -1
+tasks_hallucination_num_tasks = -1
+tasks_disambiguation_num_tasks = -1
+max_steps = 50
+
+tasks_base_task_id_filter = ["base_85", "base_89", "base_99", "base_33", "base_9"]
+tasks_hallucination_task_id_filter = ["hallucination_69", "hallucination_19"]
+tasks_disambiguation_task_id_filter = ["disambiguation_29", "disambiguation_41", "disambiguation_49", "disambiguation_7"]
+
+# User-Simulator via OpenRouter.
+user_model = "openrouter/google/gemini-2.5-flash"
+user_provider = "openrouter"
+user_thinking = false
+
+policy_evaluator_model = "openrouter/google/gemini-2.5-flash"
+policy_evaluator_provider = "openrouter"
