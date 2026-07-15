@@ -145,11 +145,14 @@ class CARBenchAgentExecutor(AgentExecutor):
                 incoming_tool_results=incoming_tool_results,
             )
 
+            # Track 2 compliance: at most this many sequential LLM calls per step.
+            call_budget = int(os.getenv("TRACK2_MAX_CALLS_PER_STEP", "5"))
             inference_result = self._call_model_with_retries(
                 context_id=context.context_id,
                 messages=messages,
                 tools=tools,
                 ctx_logger=ctx_logger,
+                max_calls=call_budget,
             )
             inference_result = self._verify_and_maybe_revise(
                 context_id=context.context_id,
@@ -157,6 +160,7 @@ class CARBenchAgentExecutor(AgentExecutor):
                 tools=tools,
                 inference_result=inference_result,
                 ctx_logger=ctx_logger,
+                call_budget=call_budget,
             )
             inference_result = self._completeness_and_maybe_revise(
                 context_id=context.context_id,
@@ -164,6 +168,16 @@ class CARBenchAgentExecutor(AgentExecutor):
                 tools=tools,
                 inference_result=inference_result,
                 ctx_logger=ctx_logger,
+                call_budget=call_budget,
+            )
+            # Sequential-call compliance audit trail: this is one baseline LLM
+            # step (one action generation). turn_metrics.num_llm_calls instead
+            # aggregates across the A2A rounds of a whole conversational turn.
+            ctx_logger.info(
+                "Baseline step complete",
+                sequential_llm_calls_this_step=inference_result.internal_calls,
+                call_budget=call_budget,
+                within_budget=inference_result.internal_calls <= call_budget,
             )
 
             parts, assistant_message_for_history = self._build_a2a_response_parts(
@@ -223,6 +237,7 @@ class CARBenchAgentExecutor(AgentExecutor):
         tools: list[dict[str, Any]],
         ctx_logger,
         initial_correction: str | None = None,
+        max_calls: int | None = None,
     ) -> AgentInferenceResult:
         last_error: Exception | None = None
         correction = initial_correction
@@ -239,7 +254,10 @@ class CARBenchAgentExecutor(AgentExecutor):
         total_quota_wait_ms = 0.0
         internal_calls = 0
 
-        for attempt in range(self.malformed_retries + 1):
+        attempts = self.malformed_retries + 1
+        if max_calls is not None:
+            attempts = max(1, min(attempts, max_calls))
+        for attempt in range(attempts):
             prompt = build_next_action_prompt(
                 messages=messages,
                 tools=tools,
@@ -293,19 +311,19 @@ class CARBenchAgentExecutor(AgentExecutor):
                 parsed = parse_next_action(result.text)
                 # Enforce checks/action consistency, but never on the final
                 # attempt: an inconsistent action is still better than an error.
-                if attempt < self.malformed_retries and os.getenv(
+                if attempt < attempts - 1 and os.getenv(
                     "TRACK2_ENFORCE_CHECKS", "1"
                 ) not in ("0", "false", "no"):
                     inconsistency = checks_inconsistency(parsed, messages)
                     if inconsistency is not None:
                         raise MalformedModelResponseError(inconsistency)
-                if attempt < self.malformed_retries and os.getenv(
+                if attempt < attempts - 1 and os.getenv(
                     "TRACK2_PHASE_SEPARATION", "1"
                 ) not in ("0", "false", "no"):
                     phase_error = phase_separation_error(parsed, messages)
                     if phase_error is not None:
                         raise MalformedModelResponseError(phase_error)
-                if attempt < self.malformed_retries and os.getenv(
+                if attempt < attempts - 1 and os.getenv(
                     "TRACK2_NAV_EDITING", "1"
                 ) not in ("0", "false", "no"):
                     nav_error = navigation_editing_error(parsed, messages)
@@ -364,7 +382,7 @@ class CARBenchAgentExecutor(AgentExecutor):
                 ctx_logger.warning(
                     f"Malformed Cerebras response: {str(exc)[:140]}",
                     attempt=attempt + 1,
-                    retrying=attempt < self.malformed_retries,
+                    retrying=attempt < attempts - 1,
                     error=str(exc),
                 )
             except CerebrasTemplateError:
@@ -382,6 +400,7 @@ class CARBenchAgentExecutor(AgentExecutor):
         tools: list[dict[str, Any]],
         inference_result: AgentInferenceResult,
         ctx_logger,
+        call_budget: int = 5,
     ) -> AgentInferenceResult:
         """Stage-2 verifier: review state-changing actions with a second,
         compact Cerebras call; at most one revision round; never fails the turn."""
@@ -394,6 +413,11 @@ class CARBenchAgentExecutor(AgentExecutor):
             if _is_state_changing_tool(tc["tool_name"])
         ]
         if not state_changing:
+            return inference_result
+        # Compliance budget: need room for the verifier call (1) plus a possible
+        # revision (>=1). If fewer than 2 calls remain in this step, skip review.
+        if call_budget - inference_result.internal_calls < 2:
+            ctx_logger.info("Verifier skipped: step call budget exhausted")
             return inference_result
         # Risk gate: skip review for the boring-correct case — a single
         # state-changing call whose argument values are all literally traceable
@@ -463,7 +487,8 @@ class CARBenchAgentExecutor(AgentExecutor):
             num_problems=len(problems),
             state_changing=state_changing,
         )
-        if verdict != "revise" or not problems:
+        revision_budget = call_budget - combined.internal_calls
+        if verdict != "revise" or not problems or revision_budget < 1:
             return combined
 
         try:
@@ -478,6 +503,7 @@ class CARBenchAgentExecutor(AgentExecutor):
                     + "; ".join(problems[:4])
                     + ". Produce a corrected next action that fixes them."
                 ),
+                max_calls=revision_budget,
             )
         except Exception as exc:
             ctx_logger.warning("Revision failed, keeping original", error=str(exc))
@@ -510,11 +536,14 @@ class CARBenchAgentExecutor(AgentExecutor):
         tools: list[dict[str, Any]],
         inference_result: AgentInferenceResult,
         ctx_logger,
+        call_budget: int = 5,
     ) -> AgentInferenceResult:
         """Catch under-acting: before the agent concludes with a closing message,
         verify every explicitly requested action was performed. Guarded to avoid
         pushing completeness where asking / unavailable-capability is correct."""
         if os.getenv("TRACK2_COMPLETENESS", "0") in ("0", "false", "no"):
+            return inference_result
+        if call_budget - inference_result.internal_calls < 2:
             return inference_result
         action = inference_result.next_action
         if action.get("action") != "respond":
@@ -572,7 +601,8 @@ class CARBenchAgentExecutor(AgentExecutor):
             f"{verdict} | unaddressed: "
             + ("; ".join(missing[:3])[:200] if missing else "none")
         )
-        if verdict != "incomplete" or not missing:
+        revision_budget = call_budget - combined.internal_calls
+        if verdict != "incomplete" or not missing or revision_budget < 1:
             return combined
 
         try:
@@ -588,6 +618,7 @@ class CARBenchAgentExecutor(AgentExecutor):
                     + ". Perform the missing action(s) now instead of "
                     "concluding. Do not add anything the user did not ask for."
                 ),
+                max_calls=revision_budget,
             )
         except Exception as exc:
             ctx_logger.warning("Completeness revision failed", error=str(exc))
