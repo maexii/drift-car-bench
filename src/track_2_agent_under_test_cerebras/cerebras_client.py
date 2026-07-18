@@ -160,6 +160,7 @@ class CompletionCallResult:
     estimated_request_tokens: int = 0
     rate_limit_headers: CerebrasRateLimitHeaders | None = None
     quota_wait_ms: float = 0.0
+    tool_calls: list[dict[str, Any]] | None = None
 
 
 @dataclass(frozen=True)
@@ -313,6 +314,7 @@ class CerebrasCompletionClient:
         max_completion_tokens: int,
         temperature: float | None,
         reasoning_effort: str | None = None,
+        tools: list[dict[str, Any]] | None = None,
     ) -> CompletionCallResult:
         with self._request_lock:
             return self._generate_locked(
@@ -323,6 +325,7 @@ class CerebrasCompletionClient:
                 max_completion_tokens=max_completion_tokens,
                 temperature=temperature,
                 reasoning_effort=reasoning_effort,
+                tools=tools,
             )
 
     def _generate_locked(
@@ -335,6 +338,7 @@ class CerebrasCompletionClient:
         max_completion_tokens: int,
         temperature: float | None,
         reasoning_effort: str | None = None,
+        tools: list[dict[str, Any]] | None = None,
     ) -> CompletionCallResult:
         normalized_model = normalize_cerebras_model(model)
         normalized_reasoning_effort = _optional_text(reasoning_effort)
@@ -359,6 +363,7 @@ class CerebrasCompletionClient:
                 max_completion_tokens=max_completion_tokens,
                 temperature=temperature,
                 reasoning_effort=normalized_reasoning_effort,
+                tools=tools,
             )
             if self.logger:
                 self.logger.info(
@@ -511,6 +516,7 @@ class CerebrasCompletionClient:
                 estimated_request_tokens=estimated_tokens,
                 rate_limit_headers=rate_limit_headers,
                 quota_wait_ms=quota_wait_ms,
+                tool_calls=_message_tool_calls(message),
             )
 
     @property
@@ -529,6 +535,7 @@ class CerebrasCompletionClient:
         max_completion_tokens: int,
         temperature: float | None,
         reasoning_effort: str | None = None,
+        tools: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         kwargs: dict[str, Any] = {
             "model": normalize_cerebras_model(model),
@@ -551,6 +558,8 @@ class CerebrasCompletionClient:
                     "schema": response_schema,
                 },
             }
+        if tools:
+            kwargs["tools"] = tools
         return kwargs
 
     def _handle_completion_error(
@@ -1326,6 +1335,26 @@ def _message_content(message: Any) -> str:
                 text_parts.append(str(part.text))
         return "".join(text_parts)
     return "" if content is None else str(content)
+
+
+def _message_tool_calls(message: Any) -> list[dict[str, Any]] | None:
+    tool_calls = _get_field(message, "tool_calls")
+    if not tool_calls:
+        return None
+    normalized = []
+    for tool_call in tool_calls:
+        function = _get_field(tool_call, "function")
+        normalized.append(
+            {
+                "id": _get_field(tool_call, "id"),
+                "type": "function",
+                "function": {
+                    "name": _get_field(function, "name"),
+                    "arguments": _get_field(function, "arguments"),
+                },
+            }
+        )
+    return normalized
 
 
 def _error_payload(body: Any) -> dict[str, Any]:

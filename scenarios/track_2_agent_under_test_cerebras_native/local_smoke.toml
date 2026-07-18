@@ -1,0 +1,27 @@
+# Local smoke scenario for the Track 2 native-format Cerebras agent under test.
+# Runs one train task from each CAR-bench task type.
+
+[evaluator]
+endpoint = "http://127.0.0.1:8081"
+cmd = "python src/evaluator/server.py --host 127.0.0.1 --port 8081"
+
+[agent_under_test]
+endpoint = "http://127.0.0.1:8080"
+cmd = "python src/track_2_agent_under_test_cerebras_native/server.py --host 127.0.0.1 --port 8080"
+
+[config]
+num_trials = 1
+task_split = "train"
+tasks_base_num_tasks = 1
+tasks_hallucination_num_tasks = 1
+tasks_disambiguation_num_tasks = 1
+max_steps = 50
+
+# User-Simulator via OpenRouter BYOK -> Google Vertex (OPENROUTER_API_KEY in .env)
+user_model = "openrouter/google/gemini-2.5-flash"
+user_provider = "openrouter"
+user_thinking = false                 # kein reasoning_effort mitschicken
+
+# Policy-Judge ebenfalls ueber OpenRouter BYOK -> Google Vertex.
+policy_evaluator_model = "openrouter/google/gemini-2.5-flash"
+policy_evaluator_provider = "openrouter"
