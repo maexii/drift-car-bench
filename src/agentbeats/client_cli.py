@@ -577,7 +577,7 @@ async def main():
                     update = event.status_update
                     state_name = _STATE_NAMES.get(update.status.state, "unknown")
                     parts = update.status.message.parts if update.status.message.parts else []
-                    if args.verbose:
+                    if args.verbose or parts:
                         print_parts(parts, state_name)
                     if update.status.state == TaskState.TASK_STATE_COMPLETED:
                         pass  # Artifacts come via artifact_update events

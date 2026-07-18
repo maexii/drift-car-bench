@@ -199,6 +199,59 @@ def _sum_quota_wait_seconds(results_by_split: Dict[str, List[EnvRunResult]]) -> 
     return total_ms / 1000.0
 
 
+def _count_checkpoint_entries(path: str) -> int:
+    # File may be missing, mid-write, or truncated — all mean "no new count".
+    try:
+        with open(path) as f:
+            return len(json.load(f))
+    except Exception:
+        return 0
+
+
+def _format_mmss(seconds: float) -> str:
+    minutes, secs = divmod(int(seconds), 60)
+    return f"{minutes:02d}:{secs:02d}"
+
+
+def _progress_message(done: int, total: Optional[int], start_time: float) -> str:
+    elapsed = time.time() - start_time
+    message = (
+        f"Progress: {done}/{total if total is not None else '?'} tasks"
+        f" | elapsed {_format_mmss(elapsed)}"
+    )
+    if total is not None and 0 < done < total:
+        eta = elapsed / done * (total - done)
+        message += f" | ETA {_format_mmss(eta)}"
+    return message
+
+
+async def _report_checkpoint_progress(
+    ckpt_path: str,
+    done_before: int,
+    total: Optional[int],
+    start_time: float,
+    updater: TaskUpdater,
+) -> None:
+    """Poll the benchmark checkpoint file and emit a progress status message
+    whenever another task trial has finished. Must never raise."""
+    last_done = -1
+    while True:
+        await asyncio.sleep(5)
+        try:
+            done = done_before + _count_checkpoint_entries(ckpt_path)
+            if done == last_done or done == 0:
+                continue
+            last_done = done
+            await updater.update_status(
+                TaskState.TASK_STATE_WORKING,
+                new_text_message(_progress_message(done, total, start_time)),
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            continue
+
+
 def _sum_successful_llm_time_seconds(
     results_by_split: Dict[str, List[EnvRunResult]],
 ) -> float:
@@ -840,6 +893,24 @@ class CARBenchEvaluator(EvaluatorAgent):
             "disambiguation": []
         }
 
+        # Grand total for progress reporting; None (no ETA) when a configured
+        # split runs "all tasks", whose count is unknown before the env loads.
+        num_trials = int(req.config.get("num_trials", 1))
+        grand_total: Optional[int] = 0
+        for task_type in ["base", "hallucination", "disambiguation"]:
+            id_filter = req.config.get(f"tasks_{task_type}_task_id_filter")
+            num_tasks = int(req.config.get(f"tasks_{task_type}_num_tasks", -1))
+            if id_filter is None and f"tasks_{task_type}_num_tasks" not in req.config:
+                continue
+            if id_filter:
+                grand_total += len(id_filter) * num_trials
+            elif num_tasks > 0:
+                grand_total += num_tasks * num_trials
+            else:
+                grand_total = None
+                break
+        done_so_far = 0
+
         try:
             # Run each task type (base, hallucination, disambiguation)
             for task_type in ["base", "hallucination", "disambiguation"]:
@@ -893,14 +964,29 @@ class CARBenchEvaluator(EvaluatorAgent):
 
                 # Run in executor to avoid blocking async event loop
                 loop = asyncio.get_event_loop()
-                results = await loop.run_in_executor(
-                    None,
-                    run_benchmark,
-                    args,
-                    ckpt_path,
-                    agent_factory
+                progress_task = asyncio.create_task(
+                    _report_checkpoint_progress(
+                        ckpt_path, done_so_far, grand_total, start_time, updater
+                    )
                 )
+                try:
+                    results = await loop.run_in_executor(
+                        None,
+                        run_benchmark,
+                        args,
+                        ckpt_path,
+                        agent_factory
+                    )
+                finally:
+                    progress_task.cancel()
 
+                done_so_far += len(results)
+                await updater.update_status(
+                    TaskState.TASK_STATE_WORKING,
+                    new_text_message(
+                        _progress_message(done_so_far, grand_total, start_time)
+                    ),
+                )
                 all_results.extend(results)
                 results_by_split[task_type].extend(results)
 
