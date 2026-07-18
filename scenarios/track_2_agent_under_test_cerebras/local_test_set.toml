@@ -11,9 +11,9 @@ cmd = "python src/track_2_agent_under_test_cerebras/server.py --host 127.0.0.1 -
 [config]
 num_trials = 3
 task_split = "test"
-tasks_base_num_tasks = -1
-tasks_hallucination_num_tasks = -1
-tasks_disambiguation_num_tasks = -1
+tasks_base_num_tasks = 10
+tasks_hallucination_num_tasks = 10
+tasks_disambiguation_num_tasks = 10
 max_steps = 50
 
 # User-Simulator via OpenRouter BYOK -> Google Vertex (OPENROUTER_API_KEY in .env)
