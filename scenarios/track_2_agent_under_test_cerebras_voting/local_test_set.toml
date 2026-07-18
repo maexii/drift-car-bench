@@ -6,7 +6,9 @@ cmd = "python src/evaluator/server.py --host 127.0.0.1 --port 8081"
 
 [agent_under_test]
 endpoint = "http://127.0.0.1:8080"
-cmd = "python src/track_2_agent_under_test_cerebras_voting/server.py --host 127.0.0.1 --port 8080"
+# k-ahead voting knobs: an action executes once it leads the runner-up by
+# --vote-margin (k) votes; --vote-max-samples caps the samples per turn.
+cmd = "python src/track_2_agent_under_test_cerebras_voting/server.py --host 127.0.0.1 --port 8080 --vote-margin 2 --vote-max-samples 5"
 
 [config]
 num_trials = 3
