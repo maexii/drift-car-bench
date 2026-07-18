@@ -16,6 +16,11 @@ standalone A2A agent server; scenarios live under the matching
   history is sent as real chat messages and tools via the native `tools`
   parameter, so gpt-oss uses its trained Harmony tool-calling format instead
   of a JSON-blob prompt plus JSON envelope (no `arguments_json` escaping).
+- **`track_2_agent_under_test_cerebras_voting`** — `_simple` plus k-ahead
+  self-consistency voting: the choose-action call is sampled repeatedly and an
+  action executes once it leads the runner-up by `TRACK2_VOTE_MARGIN` votes
+  (cap `TRACK2_VOTE_MAX_SAMPLES`, then plurality); respond samples vote by
+  action type, tool calls by exact name+arguments.
 - **`track_2_agent_under_test_cerebras_planner`** — planner/executor two-pass
   template: a private high-effort `gpt-oss` planner writes compact guidance
   after each user turn, then the executor produces the benchmark-visible
