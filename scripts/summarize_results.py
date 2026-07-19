@@ -29,6 +29,7 @@ class RunSummary:
     pass_rate: float | None
     pass_power_3: float | None
     pass_at_3: float | None
+    total_tokens: float | None
 
 
 def as_percent(value: object) -> float | None:
@@ -58,6 +59,43 @@ def scenario_name(payload: dict) -> str:
     if metadata.get("scenario_path"):
         return Path(str(metadata["scenario_path"])).name
     return "—"
+
+
+def row_total_tokens(row: dict) -> float | None:
+    total = row.get("agent_total_tokens")
+    if isinstance(total, (int, float)):
+        return float(total)
+
+    # Older payloads: sum the per-turn metrics from the trajectory instead.
+    trajectory = row.get("trajectory")
+    if not isinstance(trajectory, list):
+        return None
+    tokens = 0.0
+    saw_metrics = False
+    for message in trajectory:
+        metrics = message.get("turn_metrics") if isinstance(message, dict) else None
+        if not isinstance(metrics, dict):
+            continue
+        saw_metrics = True
+        for key in ("prompt_tokens", "completion_tokens", "thinking_tokens"):
+            value = metrics.get(key)
+            if isinstance(value, (int, float)):
+                tokens += float(value)
+    return tokens if saw_metrics else None
+
+
+def total_tokens(final_result: dict) -> float | None:
+    detailed = final_result.get("detailed_results_by_split")
+    if not isinstance(detailed, dict):
+        return None
+    values = [
+        tokens
+        for rows in detailed.values()
+        if isinstance(rows, list)
+        for row in rows
+        if isinstance(row, dict) and (tokens := row_total_tokens(row)) is not None
+    ]
+    return sum(values) if values else None
 
 
 def load_run(path: Path) -> RunSummary | None:
@@ -92,11 +130,22 @@ def load_run(path: Path) -> RunSummary | None:
         pass_rate=as_percent(final_result.get("pass_rate")),
         pass_power_3=as_percent(power_scores.get("Pass^3")),
         pass_at_3=as_percent(at_scores.get("Pass@3")),
+        total_tokens=total_tokens(final_result),
     )
 
 
 def fmt(value: float | None) -> str:
     return f"{value:5.1f}%" if value is not None else "     —"
+
+
+def fmt_tokens(value: float | None) -> str:
+    if value is None:
+        return "—"
+    if abs(value) >= 1_000_000:
+        return f"{value / 1_000_000:.1f}M"
+    if abs(value) >= 1_000:
+        return f"{value / 1_000:.1f}k"
+    return f"{value:.0f}"
 
 
 def main() -> None:
@@ -128,7 +177,7 @@ def main() -> None:
     scenario_width = max(len("scenario"), max(len(run.scenario) for run in runs))
     header = (
         f"{'run':<{label_width}}  {'scenario':<{scenario_width}}  "
-        f"{'samples':>7}  {'pass rate':>9}  {'Pass^3':>7}  {'Pass@3':>7}"
+        f"{'samples':>7}  {'pass rate':>9}  {'Pass^3':>7}  {'Pass@3':>7}  {'tokens':>8}"
     )
 
     for num_samples in sorted(groups, reverse=True):
@@ -146,7 +195,8 @@ def main() -> None:
             print(
                 f"{run.label:<{label_width}}  {run.scenario:<{scenario_width}}  "
                 f"{run.num_samples:>7}  {fmt(run.pass_rate):>9}  "
-                f"{fmt(run.pass_power_3):>7}  {fmt(run.pass_at_3):>7}"
+                f"{fmt(run.pass_power_3):>7}  {fmt(run.pass_at_3):>7}  "
+                f"{fmt_tokens(run.total_tokens):>8}"
             )
         print()
 
