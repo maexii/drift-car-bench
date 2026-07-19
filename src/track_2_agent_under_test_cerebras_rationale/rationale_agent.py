@@ -33,17 +33,21 @@ from track_2_agent_under_test_cerebras_simple.simple_agent import (
     build_next_action_prompt,
     parse_next_action,
 )
+
 sys.path.pop(0)
 
 
 DEFAULT_MAX_NOTES = 12
 
-RATIONALE_DEVELOPER_INSTRUCTIONS = DEVELOPER_INSTRUCTIONS + """
+RATIONALE_DEVELOPER_INSTRUCTIONS = (
+    DEVELOPER_INSTRUCTIONS
+    + """
 Always fill the rationale field first: a short private note (never shown to
 the user) stating why you chose this action and the specific facts the next
 step will need (values from tool results, user preferences, decisions made,
 pending sub-steps). Your notes from previous steps are provided back to you
 as internal_step_notes."""
+)
 
 
 class RationaleCARBenchAgentExecutor(SimpleCARBenchAgentExecutor):
@@ -55,6 +59,10 @@ class RationaleCARBenchAgentExecutor(SimpleCARBenchAgentExecutor):
             raise ValueError("max_notes must be >= 1")
         self.max_notes = max_notes
         self.ctx_id_to_notes: dict[str, list[str]] = {}
+
+    async def cancel(self, context, event_queue) -> None:
+        self.ctx_id_to_notes.pop(context.context_id, None)
+        await super().cancel(context, event_queue)
 
     def _choose_next_action(
         self,
