@@ -1,0 +1,79 @@
+# OFFICIAL SUBMISSION scenario.toml — CAR-bench Track 2 (Cerebras gpt-oss-120b).
+#
+# This file is part of the submission package (README "Submission Instructions"):
+# organizers inject only the secrets (CEREBRAS_API_KEY, evaluator keys); every
+# other variable resolves to the ${VAR:-default} fallbacks below. The defaults
+# therefore encode the validated best configuration (Pass^3 58.7% full run:
+# verifier + phase separation + checks enforcement + catalog/toll notices,
+# 2048 completion tokens, temperature 0, 2 malformed retries).
+#
+# TODO before submitting:
+#   1. Build and push the agent image to GHCR (public).
+#   2. Replace the image digest below (digest-pinned, not a mutable tag).
+
+[evaluator]
+# Official organizer-published evaluator image — must not be modified or
+# overridden (no user_model / policy_evaluator_* keys in this file).
+image = "ghcr.io/car-bench/car-bench-evaluator:latest"
+
+[evaluator.env]
+GEMINI_API_KEY = "${GEMINI_API_KEY:?Set GEMINI_API_KEY}"
+LOGURU_LEVEL = "${LOGURU_LEVEL:-INFO}"
+
+[agent_under_test]
+image = "ghcr.io/stepmaxi/car-bench-track-2-agent-under-test-cerebras@sha256:REPLACE_WITH_DIGEST"
+
+[agent_under_test.env]
+# --- Secrets (provided by organizers) ---
+CEREBRAS_API_KEY = "${CEREBRAS_API_KEY:?Set CEREBRAS_API_KEY}"
+
+# --- Model / provider routing (README: must be env-configurable) ---
+CEREBRAS_API_BASE = "${CEREBRAS_API_BASE:-}"
+TRACK2_EXECUTOR_MODEL = "${TRACK2_EXECUTOR_MODEL:-gpt-oss-120b}"
+TRACK2_EXECUTOR_REASONING_EFFORT = "${TRACK2_EXECUTOR_REASONING_EFFORT:-medium}"
+TRACK2_CEREBRAS_SERVICE_TIER = "${TRACK2_CEREBRAS_SERVICE_TIER:-}"
+
+# --- Sampling / output budget (validated config — do not lower) ---
+# 2048: the structured NEXT_ACTION JSON clips at 1024 tokens.
+TRACK2_MAX_COMPLETION_TOKENS = "${TRACK2_MAX_COMPLETION_TOKENS:-2048}"
+TRACK2_TEMPERATURE = "${TRACK2_TEMPERATURE:-0}"
+TRACK2_LLM_MALFORMED_RETRIES = "${TRACK2_LLM_MALFORMED_RETRIES:-2}"
+
+# --- Track 2 compliance: hard cap of 5 sequential LLM calls per baseline step
+# (shared budget across executor retries, verifier, and revision; see
+# docs/architecture-sequential-calls.md) ---
+TRACK2_MAX_CALLS_PER_STEP = "${TRACK2_MAX_CALLS_PER_STEP:-5}"
+
+# --- Reliability stack toggles (validated 58.7% configuration) ---
+TRACK2_VERIFIER = "${TRACK2_VERIFIER:-1}"
+TRACK2_VERIFIER_GATE = "${TRACK2_VERIFIER_GATE:-1}"
+TRACK2_VERIFIER_REASONING_EFFORT = "${TRACK2_VERIFIER_REASONING_EFFORT:-low}"
+TRACK2_PHASE_SEPARATION = "${TRACK2_PHASE_SEPARATION:-1}"
+TRACK2_ENFORCE_CHECKS = "${TRACK2_ENFORCE_CHECKS:-1}"
+TRACK2_CATALOG_NOTICE = "${TRACK2_CATALOG_NOTICE:-1}"
+TRACK2_TOLL_NOTICE = "${TRACK2_TOLL_NOTICE:-1}"
+TRACK2_NAV_EDITING = "${TRACK2_NAV_EDITING:-1}"
+TRACK2_COMPLETENESS = "${TRACK2_COMPLETENESS:-0}"
+TRACK2_WORKFLOWS = "${TRACK2_WORKFLOWS:-0}"
+TRACK2_RESPONSE_SCAFFOLD = "${TRACK2_RESPONSE_SCAFFOLD:-0}"
+
+# --- Cerebras rate-limit / queue backoff handling ---
+TRACK2_CEREBRAS_QUEUE_BACKOFF_SECONDS = "${TRACK2_CEREBRAS_QUEUE_BACKOFF_SECONDS:-60}"
+TRACK2_CEREBRAS_QUEUE_BACKOFF_INITIAL_JITTER_RATIO = "${TRACK2_CEREBRAS_QUEUE_BACKOFF_INITIAL_JITTER_RATIO:-0.1}"
+TRACK2_CEREBRAS_QUEUE_BACKOFF_SECOND_MIN_SECONDS = "${TRACK2_CEREBRAS_QUEUE_BACKOFF_SECOND_MIN_SECONDS:-90}"
+TRACK2_CEREBRAS_QUEUE_BACKOFF_SECOND_MAX_SECONDS = "${TRACK2_CEREBRAS_QUEUE_BACKOFF_SECOND_MAX_SECONDS:-120}"
+TRACK2_CEREBRAS_QUEUE_BACKOFF_CAP_MIN_SECONDS = "${TRACK2_CEREBRAS_QUEUE_BACKOFF_CAP_MIN_SECONDS:-180}"
+TRACK2_CEREBRAS_QUEUE_BACKOFF_CAP_MAX_SECONDS = "${TRACK2_CEREBRAS_QUEUE_BACKOFF_CAP_MAX_SECONDS:-300}"
+TRACK2_CEREBRAS_RATE_LIMIT_RETRY_BUFFER_SECONDS = "${TRACK2_CEREBRAS_RATE_LIMIT_RETRY_BUFFER_SECONDS:-1}"
+CAR_BENCH_CEREBRAS_RATE_LIMIT_REPORT_DIR = "${CAR_BENCH_CEREBRAS_RATE_LIMIT_REPORT_DIR:-/tmp/car-bench-rate-limit-reports}"
+
+# --- Logging ---
+LOGURU_LEVEL = "${LOGURU_LEVEL:-INFO}"
+
+[config]
+num_trials = 3
+task_split = "hidden"
+tasks_base_num_tasks = -1
+tasks_hallucination_num_tasks = -1
+tasks_disambiguation_num_tasks = -1
+max_steps = 50
