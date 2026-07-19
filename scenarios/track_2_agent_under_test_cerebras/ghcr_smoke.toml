@@ -3,7 +3,7 @@
 
 [evaluator]
 image = "ghcr.io/car-bench/car-bench-evaluator:latest"
-env = { GEMINI_API_KEY = "${GEMINI_API_KEY:?Set GEMINI_API_KEY in .env}", LOGURU_LEVEL = "${LOGURU_LEVEL:-INFO}" }
+env = { GEMINI_API_KEY = "${GEMINI_API_KEY:-}", OPENROUTER_API_KEY = "${OPENROUTER_API_KEY:?Set OPENROUTER_API_KEY in .env}", LOGURU_LEVEL = "${LOGURU_LEVEL:-INFO}" }
 
 [agent_under_test]
 image = "ghcr.io/maexii/drift-car-bench@sha256:9b613363fe221a4372df87de11245c37f2ea76f19718650cd169f9a33003f858"
@@ -16,3 +16,11 @@ tasks_base_num_tasks = 1
 tasks_hallucination_num_tasks = 1
 tasks_disambiguation_num_tasks = 1
 max_steps = 50
+
+# Dev-only: User-Simulator + Policy-Judge via OpenRouter BYOK (wie local_test_set).
+# Official runs use the organizers' evaluator secrets instead.
+user_model = "openrouter/google/gemini-2.5-flash"
+user_provider = "openrouter"
+user_thinking = false
+policy_evaluator_model = "openrouter/google/gemini-2.5-flash"
+policy_evaluator_provider = "openrouter"
