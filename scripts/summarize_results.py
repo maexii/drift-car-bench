@@ -29,7 +29,7 @@ class RunSummary:
     pass_rate: float | None
     pass_power_3: float | None
     pass_at_3: float | None
-    total_tokens: float | None
+    tokens_per_task: float | None
 
 
 def as_percent(value: object) -> float | None:
@@ -84,7 +84,7 @@ def row_total_tokens(row: dict) -> float | None:
     return tokens if saw_metrics else None
 
 
-def total_tokens(final_result: dict) -> float | None:
+def tokens_per_task(final_result: dict) -> float | None:
     detailed = final_result.get("detailed_results_by_split")
     if not isinstance(detailed, dict):
         return None
@@ -95,7 +95,7 @@ def total_tokens(final_result: dict) -> float | None:
         for row in rows
         if isinstance(row, dict) and (tokens := row_total_tokens(row)) is not None
     ]
-    return sum(values) if values else None
+    return sum(values) / len(values) if values else None
 
 
 def load_run(path: Path) -> RunSummary | None:
@@ -130,7 +130,7 @@ def load_run(path: Path) -> RunSummary | None:
         pass_rate=as_percent(final_result.get("pass_rate")),
         pass_power_3=as_percent(power_scores.get("Pass^3")),
         pass_at_3=as_percent(at_scores.get("Pass@3")),
-        total_tokens=total_tokens(final_result),
+        tokens_per_task=tokens_per_task(final_result),
     )
 
 
@@ -177,7 +177,7 @@ def main() -> None:
     scenario_width = max(len("scenario"), max(len(run.scenario) for run in runs))
     header = (
         f"{'run':<{label_width}}  {'scenario':<{scenario_width}}  "
-        f"{'samples':>7}  {'pass rate':>9}  {'Pass^3':>7}  {'Pass@3':>7}  {'tokens':>8}"
+        f"{'samples':>7}  {'pass rate':>9}  {'Pass^3':>7}  {'Pass@3':>7}  {'tok/task':>8}"
     )
 
     for num_samples in sorted(groups, reverse=True):
@@ -196,7 +196,7 @@ def main() -> None:
                 f"{run.label:<{label_width}}  {run.scenario:<{scenario_width}}  "
                 f"{run.num_samples:>7}  {fmt(run.pass_rate):>9}  "
                 f"{fmt(run.pass_power_3):>7}  {fmt(run.pass_at_3):>7}  "
-                f"{fmt_tokens(run.total_tokens):>8}"
+                f"{fmt_tokens(run.tokens_per_task):>8}"
             )
         print()
 
