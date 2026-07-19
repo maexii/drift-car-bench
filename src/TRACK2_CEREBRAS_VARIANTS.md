@@ -21,6 +21,10 @@ standalone A2A agent server; scenarios live under the matching
   action executes once it leads the runner-up by `TRACK2_VOTE_MARGIN` votes
   (cap `TRACK2_VOTE_MAX_SAMPLES`, then plurality); respond samples vote by
   action type, tool calls by exact name+arguments.
+- **`track_2_agent_under_test_cerebras_multiprompt`** — `_simple` plus
+  parallel voting across different system-prompt files: one sample per prompt
+  file in `prompts/`, plurality wins, and `TRACK2_MAX_PROMPTS` or
+  `--max-prompts` can cap the number of voters to stay within API limits.
 - **`track_2_agent_under_test_cerebras_rationale`** — `_simple` plus a private
   rationale carried between steps: every choose-action call also emits a short
   internal note (why this action + facts to remember), stored per conversation
