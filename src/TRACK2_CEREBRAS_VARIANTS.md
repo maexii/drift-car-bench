@@ -27,6 +27,12 @@ standalone A2A agent server; scenarios live under the matching
   and fed back to the next call as `internal_step_notes` (last
   `TRACK2_MAX_NOTES`), so each step sees the reasoning behind the previous
   ones at no extra LLM-call cost.
+- **`track_2_agent_under_test_cerebras_critics`** — `_simple` plus a chain of
+  adversarial error critics: the drafted action passes sequentially through
+  five single-error reviewers (premature action, policy violation, logical
+  error, concealment, hallucination); the first rejection routes action +
+  critique into a corrector whose revision re-enters the chain, until the
+  chain accepts or `TRACK2_MAX_REVISIONS` rounds are spent.
 - **`track_2_agent_under_test_cerebras_planner`** — planner/executor two-pass
   template: a private high-effort `gpt-oss` planner writes compact guidance
   after each user turn, then the executor produces the benchmark-visible
