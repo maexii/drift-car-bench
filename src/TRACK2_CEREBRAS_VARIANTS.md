@@ -45,6 +45,10 @@ standalone A2A agent server; scenarios live under the matching
   template: a private high-effort `gpt-oss` planner writes compact guidance
   after each user turn, then the executor produces the benchmark-visible
   action; the plan is reused across tool-result continuation turns.
+- **`track_2_agent_under_test_cerebras_hybrid`** — `_simple` with the planned
+  combined recipe: private plan review on user turns, serialized k-ahead draft
+  voting, rationale carryover, accumulated pitfall warnings, and the existing
+  critic chain with an editor pass on each rejection.
 - **`track_2_agent_under_test_cerebras_maxi`** — base template plus Max's
   quality passes: an optional verifier and completeness check can revise the
   drafted action within a per-step LLM-call budget
