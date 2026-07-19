@@ -21,7 +21,7 @@ GEMINI_API_KEY = "${GEMINI_API_KEY:?Set GEMINI_API_KEY}"
 LOGURU_LEVEL = "${LOGURU_LEVEL:-INFO}"
 
 [agent_under_test]
-image = "ghcr.io/maexii/drift-car-bench@sha256:REPLACE_WITH_DIGEST"
+image = "ghcr.io/maexii/drift-car-bench@sha256:9b613363fe221a4372df87de11245c37f2ea76f19718650cd169f9a33003f858"
 
 [agent_under_test.env]
 # --- Secrets (provided by organizers) ---
