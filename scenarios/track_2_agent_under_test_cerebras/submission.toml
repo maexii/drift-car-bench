@@ -21,7 +21,7 @@ GEMINI_API_KEY = "${GEMINI_API_KEY:?Set GEMINI_API_KEY}"
 LOGURU_LEVEL = "${LOGURU_LEVEL:-INFO}"
 
 [agent_under_test]
-image = "ghcr.io/stepmaxi/car-bench-track-2-agent-under-test-cerebras@sha256:REPLACE_WITH_DIGEST"
+image = "ghcr.io/maexii/car-bench-track-2-agent-under-test-cerebras@sha256:REPLACE_WITH_DIGEST"
 
 [agent_under_test.env]
 # --- Secrets (provided by organizers) ---
