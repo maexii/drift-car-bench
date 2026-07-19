@@ -24,6 +24,7 @@ DEFAULT_INPUT_DIR = REPO_ROOT / "output"
 class RunSummary:
     path: Path
     label: str
+    scenario: str
     num_samples: int
     pass_rate: float | None
     pass_power_3: float | None
@@ -47,6 +48,16 @@ def run_label(payload: dict, path: Path) -> str:
     if metadata.get("reasoning_effort"):
         pieces.append(str(metadata["reasoning_effort"]))
     return " / ".join(pieces)
+
+
+def scenario_name(payload: dict) -> str:
+    metadata = payload.get("metadata", {})
+    metadata = metadata if isinstance(metadata, dict) else {}
+    if metadata.get("scenario_name"):
+        return str(metadata["scenario_name"]).split("/")[-1]
+    if metadata.get("scenario_path"):
+        return Path(str(metadata["scenario_path"])).name
+    return "—"
 
 
 def load_run(path: Path) -> RunSummary | None:
@@ -76,6 +87,7 @@ def load_run(path: Path) -> RunSummary | None:
     return RunSummary(
         path=path,
         label=run_label(payload, path),
+        scenario=scenario_name(payload),
         num_samples=num_samples,
         pass_rate=as_percent(final_result.get("pass_rate")),
         pass_power_3=as_percent(power_scores.get("Pass^3")),
@@ -113,7 +125,11 @@ def main() -> None:
         groups.setdefault(run.num_samples, []).append(run)
 
     label_width = max(len(run.label) for run in runs)
-    header = f"{'run':<{label_width}}  {'samples':>7}  {'pass rate':>9}  {'Pass^3':>7}  {'Pass@3':>7}"
+    scenario_width = max(len("scenario"), max(len(run.scenario) for run in runs))
+    header = (
+        f"{'run':<{label_width}}  {'scenario':<{scenario_width}}  "
+        f"{'samples':>7}  {'pass rate':>9}  {'Pass^3':>7}  {'Pass@3':>7}"
+    )
 
     for num_samples in sorted(groups, reverse=True):
         group = sorted(
@@ -128,8 +144,9 @@ def main() -> None:
         print(header)
         for run in group:
             print(
-                f"{run.label:<{label_width}}  {run.num_samples:>7}  "
-                f"{fmt(run.pass_rate):>9}  {fmt(run.pass_power_3):>7}  {fmt(run.pass_at_3):>7}"
+                f"{run.label:<{label_width}}  {run.scenario:<{scenario_width}}  "
+                f"{run.num_samples:>7}  {fmt(run.pass_rate):>9}  "
+                f"{fmt(run.pass_power_3):>7}  {fmt(run.pass_at_3):>7}"
             )
         print()
 
