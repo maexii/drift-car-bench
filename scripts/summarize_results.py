@@ -4,7 +4,8 @@
 Reads the result payloads written by the scenario client (``output/<agent>/*.json``)
 and prints, per run: number of samples (task trials evaluated), overall pass rate,
 Pass^3, and Pass@3. Runs are grouped by number of samples (so only comparable runs
-are ranked together) and ordered by Pass^3 descending within each group.
+are ranked together) and ordered within each group by Pass^3 descending, breaking
+ties by pass rate, then Pass@3 (both descending), then lowest tokens per task.
 
 Usage: python scripts/summarize_results.py [--input-dir output]
 """
@@ -184,10 +185,13 @@ def main() -> None:
         group = sorted(
             groups[num_samples],
             key=lambda run: (
-                run.pass_power_3 if run.pass_power_3 is not None else -1.0,
-                run.pass_rate if run.pass_rate is not None else -1.0,
+                -(run.pass_power_3 if run.pass_power_3 is not None else -1.0),
+                -(run.pass_rate if run.pass_rate is not None else -1.0),
+                -(run.pass_at_3 if run.pass_at_3 is not None else -1.0),
+                run.tokens_per_task
+                if run.tokens_per_task is not None
+                else float("inf"),
             ),
-            reverse=True,
         )
         print(f"=== {num_samples} samples ===")
         print(header)
