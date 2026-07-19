@@ -1,0 +1,1 @@
+"""Chain-of-thought Cerebras-backed Track 2 agent variant for CAR-bench A2A runs."""

@@ -33,6 +33,14 @@ standalone A2A agent server; scenarios live under the matching
   error, concealment, hallucination); the first rejection routes action +
   critique into a corrector whose revision re-enters the chain, until the
   chain accepts or `TRACK2_MAX_REVISIONS` rounds are spent.
+- **`track_2_agent_under_test_cerebras_cot`** — `_simple` with a prompt-only
+  chain-of-thought adaptation: the output schema carries required
+  `subproblems` + `chain_of_thought` fields ahead of the action fields, the
+  prompt adds a subproblem-decomposition protocol and three few-shot CoT
+  examples (multi-step tool use, missing capability, disambiguation), plus a
+  rule pointing at the benchmark-supplied `planning_tool` for complex
+  requests; the CoT fields are stripped before replying (default completion
+  budget 2048).
 - **`track_2_agent_under_test_cerebras_planner`** — planner/executor two-pass
   template: a private high-effort `gpt-oss` planner writes compact guidance
   after each user turn, then the executor produces the benchmark-visible
