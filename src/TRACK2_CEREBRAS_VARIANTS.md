@@ -21,6 +21,12 @@ standalone A2A agent server; scenarios live under the matching
   action executes once it leads the runner-up by `TRACK2_VOTE_MARGIN` votes
   (cap `TRACK2_VOTE_MAX_SAMPLES`, then plurality); respond samples vote by
   action type, tool calls by exact name+arguments.
+- **`track_2_agent_under_test_cerebras_rationale`** — `_simple` plus a private
+  rationale carried between steps: every choose-action call also emits a short
+  internal note (why this action + facts to remember), stored per conversation
+  and fed back to the next call as `internal_step_notes` (last
+  `TRACK2_MAX_NOTES`), so each step sees the reasoning behind the previous
+  ones at no extra LLM-call cost.
 - **`track_2_agent_under_test_cerebras_planner`** — planner/executor two-pass
   template: a private high-effort `gpt-oss` planner writes compact guidance
   after each user turn, then the executor produces the benchmark-visible
