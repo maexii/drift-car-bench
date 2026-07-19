@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+from track_2_agent_under_test_cerebras.car_bench_agent import logger as base_logger
 from track_2_agent_under_test_cerebras.cerebras_client import (
     MalformedModelResponseError,
 )
@@ -226,7 +227,10 @@ class HybridCARBenchAgentExecutor(SimpleCARBenchAgentExecutor):
         if private_plan := self.ctx_id_to_private_plan.get(context_id):
             return private_plan
 
-        private_plan = build_fallback_private_plan(messages)
+        private_plan = build_fallback_private_plan(
+            messages,
+            reason="missing_cached_private_plan",
+        )
         self.ctx_id_to_private_plan[context_id] = private_plan
         return private_plan
 
@@ -241,23 +245,40 @@ class HybridCARBenchAgentExecutor(SimpleCARBenchAgentExecutor):
         pitfalls: list[str],
         pending_plan_delta: str,
     ) -> dict[str, Any]:
-        return self._structured_call(
-            context_id,
-            system=PRIVATE_PLANNER_INSTRUCTIONS,
-            build_prompt=lambda correction: build_private_planner_prompt(
-                messages=messages,
-                tools=tools,
-                prior_private_plan=prior_private_plan,
-                notes=notes,
-                pitfalls=pitfalls,
-                pending_plan_delta=pending_plan_delta,
-                correction=correction,
-            ),
-            schema=PRIVATE_PLAN_OUTPUT_SCHEMA,
-            schema_name="private_plan",
-            parse=parse_private_plan,
-            temperature=self.temperature,
-        )
+        try:
+            return self._structured_call(
+                context_id,
+                system=PRIVATE_PLANNER_INSTRUCTIONS,
+                build_prompt=lambda correction: build_private_planner_prompt(
+                    messages=messages,
+                    tools=tools,
+                    prior_private_plan=prior_private_plan,
+                    notes=notes,
+                    pitfalls=pitfalls,
+                    pending_plan_delta=pending_plan_delta,
+                    correction=correction,
+                ),
+                schema=PRIVATE_PLAN_OUTPUT_SCHEMA,
+                schema_name="private_plan",
+                parse=parse_private_plan,
+                temperature=self.temperature,
+            )
+        except MalformedModelResponseError as exc:
+            base_logger.bind(
+                role="agent_under_test",
+                context=f"ctx:{context_id[:8]}",
+            ).warning(
+                "Hybrid planner returned malformed private plan; falling back to transcript plan",
+                error=str(exc),
+                has_prior_private_plan=prior_private_plan is not None,
+                num_notes=len(notes),
+                num_pitfalls=len(pitfalls),
+                has_pending_plan_delta=bool(pending_plan_delta),
+            )
+            return build_fallback_private_plan(
+                messages,
+                reason="private_plan_generation_failed",
+            )
 
     def _draft_candidate_action(
         self,
@@ -447,6 +468,8 @@ class HybridCARBenchAgentExecutor(SimpleCARBenchAgentExecutor):
         temperature: float | None,
     ) -> Any:
         last_error: Exception | None = None
+        last_raw_text = ""
+        last_finish_reason: str | None = None
         correction = None
 
         for _ in range(self.malformed_retries + 1):
@@ -462,6 +485,8 @@ class HybridCARBenchAgentExecutor(SimpleCARBenchAgentExecutor):
                 temperature=temperature,
                 reasoning_effort=self.reasoning_effort,
             )
+            last_raw_text = result.text or ""
+            last_finish_reason = result.finish_reason
             self._record_turn_metrics(
                 context_id,
                 result.duration_ms,
@@ -479,7 +504,10 @@ class HybridCARBenchAgentExecutor(SimpleCARBenchAgentExecutor):
                 )
 
         raise MalformedModelResponseError(
-            f"Cerebras did not produce a valid {schema_name} JSON object: {last_error}"
+            "Cerebras did not produce a valid "
+            f"{schema_name} JSON object: {last_error} "
+            f"| finish_reason={last_finish_reason!r} "
+            f"| raw_output_preview={_model_text_preview(last_raw_text)}"
         )
 
     def _persist_private_state(
@@ -774,7 +802,11 @@ def _planning_tool_shape(tools: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def build_fallback_private_plan(messages: list[dict[str, Any]]) -> dict[str, Any]:
+def build_fallback_private_plan(
+    messages: list[dict[str, Any]],
+    *,
+    reason: str = "missing_cached_private_plan",
+) -> dict[str, Any]:
     latest_tool_names = [
         str(message.get("name"))
         for message in messages
@@ -785,11 +817,24 @@ def build_fallback_private_plan(messages: list[dict[str, Any]]) -> dict[str, Any
         if latest_tool_names
         else ""
     )
+    if reason == "private_plan_generation_failed":
+        plan_id = "hybrid_planner_failure_fallback"
+        title = "Continue after planner failure"
+        note_prefix = (
+            "Private plan generation failed. Continue from transcript evidence only."
+        )
+    else:
+        plan_id = "hybrid_continuation_without_cached_plan"
+        title = "Continue from transcript"
+        note_prefix = (
+            "No cached private plan was available for this continuation turn. "
+            "Continue from transcript evidence only."
+        )
     return {
         "planning_tool": {
             "command": "create",
-            "plan_id": "hybrid_continuation_without_cached_plan",
-            "title": "Continue from transcript",
+            "plan_id": plan_id,
+            "title": title,
             "steps": [
                 {
                     "step_description": (
@@ -805,11 +850,8 @@ def build_fallback_private_plan(messages: list[dict[str, Any]]) -> dict[str, Any
                 },
             ],
         },
-        "notes": (
-            "No cached private plan was available for this continuation turn. "
-            "Continue from transcript evidence only." + observation_note
-        ),
-        "risk_flags": ["missing_cached_private_plan"],
+        "notes": note_prefix + observation_note,
+        "risk_flags": [reason],
     }
 
 
@@ -832,6 +874,15 @@ def _dedupe_strings(values: list[str]) -> list[str]:
         seen.add(cleaned)
         deduped.append(cleaned)
     return deduped
+
+
+def _model_text_preview(text: str, limit: int = 200) -> str:
+    compact = " ".join(text.split())
+    if not compact:
+        return "<empty>"
+    if len(compact) <= limit:
+        return compact
+    return compact[:limit] + "..."
 
 
 def action_vote_key(action: dict[str, Any]) -> str:
