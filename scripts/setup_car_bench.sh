@@ -18,6 +18,7 @@ mkdir -p "$(dirname "$CAR_BENCH_DIR")"
 echo "Cloning car-bench repository..."
 git clone --depth 1 https://github.com/CAR-bench/car-bench.git "$CAR_BENCH_DIR"
 
+"$SCRIPT_DIR/apply_car_bench_patches.sh"
 
 echo ""
 echo "✅ Setup complete! car-bench is ready at:"
