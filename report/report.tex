@@ -76,8 +76,11 @@ result, and \textsc{disambiguation} checks whether ambiguity is
 resolved from context or, when it cannot be, surfaced to the user.
 Scoring is strict: a task counts only if tool use, final state,
 intermediate state, and policy compliance are all correct, and we
-report Pass$^3$ (all three trials of a task succeed), which punishes
-non-determinism as hard as outright error.
+report Pass$^3$ --- the consistency metric introduced with
+$\tau$-bench \cite{yao2024taubench}, under which all three trials of a
+task must succeed --- which punishes non-determinism as hard as
+outright error. Agent and evaluator communicate over the Agent2Agent
+(A2A) protocol \cite{a2a2026}.
 
 Track~2 constrains inference rather than model choice: at most five
 \emph{sequential} LLM calls per baseline step (parallel calls inside a
@@ -161,7 +164,7 @@ stage~\textcircled{1} action stands.
 \node[dec, below=of s1] (g) {deterministic guards: checks-consistency,\\
   phase separation, navigation editing};
 \node[dec, below=of g] (rg) {state-changing \textbf{and} risk gate fires
-  \textbf{and}\\ budget\(-\)used \(\geq 2\)?};
+  \textbf{and}\\ at least 2 calls left?};
 \node[box, below=of rg] (s2) {\textcircled{2} \textbf{Verify} (1 call,
   low effort, 512 tok)};
 \node[box, below=of s2] (s3) {\textcircled{3} \textbf{Revise} (1 call,
@@ -176,16 +179,22 @@ stage~\textcircled{1} action stands.
 \draw[arr] (s2) -- node[right=0.5mm] {revise} (s3);
 \draw[arr] (s3) -- (out);
 
-\draw[arr] (g.west) -- ++(-5mm,0) node[midway, above=0.2mm] {reject}
-  |- (s1.west);
-\draw[arr] (rg.east) -- ++(5mm,0) node[midway, above=0.2mm] {no}
+\draw[arr] (g.west) -- ++(-7mm,0)
+  node[pos=0.85, above=0.2mm, font=\tiny] {reject} |- (s1.west);
+\draw[arr] (rg.east) -- ++(14mm,0)
+  node[pos=0, above=0.2mm, anchor=south west, font=\tiny] {no}
   |- (out.east);
-\draw[arr] (s2.east) -- ++(2.5mm,0) node[midway, above=0.2mm]
-  {approve} |- (out.east);
+\draw[arr] (s2.east) -- ++(9mm,0)
+  node[pos=0, above=0.2mm, anchor=south west, font=\tiny] {approve}
+  |- (out.east);
 \end{tikzpicture}
-\caption{One baseline LLM step. All stages draw from a single per-step
-budget; the worst case is $3+1+1=5$ sequential calls, the common case is
-$1$--$3$. No parallel calls are used.}
+\caption{One baseline LLM step. \textbf{Maximum sequential depth: 5}
+($3+1+1$, boxed stages are the only LLM calls); common case $1$--$3$.
+\textbf{Parallel fan-out: 1} --- no stage issues concurrent calls, so
+nothing is exempt from the sequential count. Branches are the two
+gates; the only retry loop is the enforcement loop inside
+stage~\textcircled{1}, whose iterations are counted against the same
+budget.}
 \label{fig:arch}
 \end{figure}
 
@@ -266,12 +275,18 @@ notice not to re-ask for information the user has just declined to
 provide.
 
 \paragraph{Gated verification.}
-Over a full run the verifier issued 86 reviews and requested revision
-in $21\%$ of them; inspection of a sample showed substantive catches
-(a policy violation, invented values, unrequested extra actions) rather
-than stylistic nagging. Gating matters: the full stack costs only
-$+13\%$ LLM time versus the single-call baseline, because most steps
-never reach stage~\textcircled{2}.
+Instrumentation of the best run quantifies both the gate and the
+reviewer. Of 338 steps that reached the gate, 238 ($70\%$) were skipped
+outright; the verifier ran 99 times and requested a revision in 30 of
+them ($30\%$). The confirmation run reproduces this profile closely
+(223 skipped, 87 reviews, 25 revisions). Inspection of a sample showed
+substantive catches --- a policy violation, invented values,
+unrequested extra actions --- rather than stylistic nagging. One
+verifier call failed outright and, as designed, left the
+stage~\textcircled{1} action untouched instead of failing the turn.
+Gating keeps this affordable: the full stack spends $92$k tokens per
+task against $85$k for the prompt-only baseline, an overhead of $+9\%$
+(confirmation run: $+5\%$).
 
 \section{Results}
 
@@ -397,7 +412,8 @@ nothing is injected but the API key.}
 \label{tab:config}
 \end{table}
 
-The submitted agent uses Cerebras-hosted \texttt{gpt-oss-120b} through
+The submitted agent uses Cerebras-hosted \texttt{gpt-oss-120b}
+\cite{openai2025gptoss} through
 the Cerebras SDK, with all model names, routes, API bases, service
 tiers, reasoning-effort selectors and sampling parameters exposed as
 environment variables in the submitted \texttt{scenario.toml}; the
@@ -411,6 +427,22 @@ and \texttt{thinking\_tokens} on final responses. The image is public
 and digest-pinned; it was validated end-to-end against the official
 evaluator image via the repository's GHCR validation path.
 Table~\ref{tab:config} lists the exact submitted configuration.
+
+\paragraph{Assumptions behind the compute figures.}
+Token counts are what the agent reports through A2A: prompt,
+completion and thinking tokens summed over \emph{all} internal LLM
+calls of a turn, including calls that were discarded by an enforcement
+retry, and including the verifier and revision calls. They are
+therefore an upper bound on what a lenient accounting would report.
+The ${\sim}92$k figure is the mean over all 375 task-trials of the best
+run; the median is $82$k and the single most expensive trial reached
+$584$k, so the average sits comfortably under the 500k limit while
+individual pathological conversations can exceed it. Wall-clock
+latency is \emph{not} a meaningful cost comparison in our data: runs
+were executed across several days on a shared provider tier, and
+between-day variation in provider load exceeded the effect of our
+configuration changes. We therefore quote token overhead rather than
+latency overhead throughout.
 
 Two caveats belong on the record. First, the capability catalog of
 Section~\ref{sec:techniques} is prior knowledge: it is compiled offline
@@ -438,8 +470,8 @@ result should be expected to fall below our development figure.
 
 Three directions remain open. First, the verifier currently checks
 several aspects in one pass; splitting it into narrow single-aspect
-reviewers is affordable within the call budget and may raise its
-$21\%$ revision rate to a more useful precision. Second, best-of-$N$
+reviewers is affordable within the call budget and may sharpen the
+precision of its $30\%$ revision rate. Second, best-of-$N$
 sampling is attractive under Pass$^3$ but interacts badly with
 provider rate windows, so it needs a scheduling story before it can be
 evaluated fairly. Third, our workflow-memory experiment failed for what
@@ -464,11 +496,30 @@ reasoning problem than a plumbing problem.
 \bibliographystyle{named}
 \begin{thebibliography}{1}
 
+\bibitem{a2a2026}
+A2A~Project.
+\newblock Agent2{A}gent ({A}2{A}) protocol, version 1.0.
+\newblock The Linux Foundation, 2026. \url{https://a2a-protocol.org/v1.0.0/}.
+
 \bibitem{kirmayr2026carbench}
 Johannes Kirmayr, Lukas Stappen, and Elisabeth Andr\'e.
 \newblock {CAR-bench}: Evaluating the consistency and limit-awareness of
   {LLM} agents under real-world uncertainty.
-\newblock arXiv:2601.22027, 2026.
+\newblock In \emph{Proceedings of the 64th Annual Meeting of the Association
+  for Computational Linguistics (Volume 1: Long Papers)}, pages 40599--40618,
+  San Diego, California, United States, 2026. Association for Computational
+  Linguistics.
+
+\bibitem{openai2025gptoss}
+OpenAI.
+\newblock gpt-oss-120b \& gpt-oss-20b model card.
+\newblock arXiv:2508.10925, 2025.
+
+\bibitem{yao2024taubench}
+Shunyu Yao, Noah Shinn, Pedram Razavi, and Karthik Narasimhan.
+\newblock $\tau$-bench: A benchmark for tool-agent-user interaction in
+  real-world domains.
+\newblock arXiv:2406.12045, 2024.
 
 \end{thebibliography}
 
