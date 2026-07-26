@@ -1,0 +1,35 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+// README at: https://github.com/devcontainers/templates/tree/main/src/alpine
+{
+  "name": "LaTeX",
+  // Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
+  "image": "texlive/texlive:latest",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "James-Yu.latex-workshop",
+        "streetsidesoftware.code-spell-checker",
+        "streetsidesoftware.code-spell-checker-german",
+        "letmaik.git-tree-compare"
+      ],
+      "settings": {
+        "latex-workshop.formatting.latex": "latexindent",
+        "[latex]": {
+          "editor.wordWrap": "on"
+        },
+        "cSpell.language": "en,de"
+      }
+    }
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "username": "texlive",
+      "installZsh": "false",
+      "installOhMyZsh": "false",
+      "upgradePackages": "false"
+    }
+  },
+  "remoteUser": "texlive",
+  "containerUser": "texlive",
+  "updateRemoteUserUID": true
+}
