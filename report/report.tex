@@ -214,7 +214,8 @@ calls, which is conservative --- a lenient reading would exclude them.
 \bottomrule
 \end{tabular}
 \caption{Worst-case sequential calls per baseline step. Measured
-average token use is ${\sim}105$k per task against the 500k limit.}
+average token use in the submitted configuration is ${\sim}92$k per
+task against the 500k limit.}
 \label{tab:budget}
 \end{table}
 
@@ -242,7 +243,7 @@ conversation (user utterance or tool result); values that are invented
 or silently defaulted are rejected. A separate validator catches
 template placeholders (\texttt{\{\{...\}\}}, \texttt{<...>},
 \texttt{tbd}) that the model emits when chaining dependent calls. This
-second validator alone moved \textsc{base} from $69\%$ to $76$--$78\%$,
+second validator alone moved \textsc{base} from $62\%$ to $66$--$72\%$,
 mostly on multi-step route lookups.
 
 \paragraph{Capability-catalog notice.}
@@ -282,10 +283,10 @@ Configuration & Base & Hall. & Dis. & \textbf{Pass$^3$} \\
 \midrule
 Prompt-only baseline      & 60 & 42 & 28 & 43.3 \\
 $+$ guards, gated verifier & 64 & 42 & 48 & 51.3 \\
-$+$ catalog notice        & 69 & 52 & 44 & 52.0 \\
-$+$ placeholder, toll     & 76 & 67 & 56 & \textbf{58.7} \\
+$+$ catalog notice        & 62 & 54 & 40 & 52.0 \\
+$+$ placeholder, toll     & 66 & 58 & 52 & \textbf{58.7} \\
 \midrule
-\emph{confirmation run}   & 78 & 67 & 52 & 56.7 \\
+\emph{confirmation run}   & 72 & 58 & 40 & 56.7 \\
 \bottomrule
 \end{tabular}
 \caption{Pass$^3$ (\%) on the public test split, 125 tasks
@@ -295,7 +296,14 @@ configurations, each measured in a separate full run.}
 \end{table}
 
 Table~\ref{tab:results} reports full runs on the public test split
-(125 tasks, three trials, temperature $0$). The stack raises Pass$^3$
+(125 tasks, three trials, temperature $0$; Pass$^3$ is averaged over
+the three task families). Every row is a separate full evaluation.
+Reaching the final configuration took 16 such runs --- roughly an hour
+of wall-clock time each --- alongside 30 shorter runs on task subsets,
+over eight days. We report full-run numbers exclusively: as
+Section~\ref{sec:noise} shows, the short runs we used for iteration
+were systematically misleading, and several configurations that looked
+best on a subset lost on the full split. The stack raises Pass$^3$
 from $43.3\%$ to $58.7\%$, with the best configuration confirmed twice
 in the $56$--$59\%$ range. For context, the published CAR-bench
 leaderboard places the same open model at $28\%$ and reports $41\%$ for
@@ -315,6 +323,7 @@ rule that solved several \textsc{disambiguation} tasks eroded
 completion-versus-compliance tension the CAR-bench authors describe.
 
 \section{Negative Results and Measurement Noise}
+\label{sec:noise}
 
 We report four techniques that looked promising and did not survive.
 (i)~A \emph{workflow memory} mined from the training split (canonical
