@@ -253,10 +253,10 @@ from the CAR-bench analysis to separate information gathering from
 execution: no state change without a prior read-only call, and no
 clarifying question without a tool attempt since the last user message.
 \emph{Navigation editing} forces the agent to observe navigation state
-before replacing an active route --- exploiting a property of the
-reward function, namely that intermediate-state credit is a
-\emph{subset} check over state hashes, so additional read-only calls
-are free while wrong state changes are not.
+before replacing an active route --- a rule the scoring makes cheap to
+enforce, since intermediate-state credit is a \emph{subset} check over
+state hashes: additional read-only calls carry no penalty, while wrong
+state changes do.
 
 \paragraph{Argument-level anti-hallucination.}
 Every argument of a state-changing call must appear literally in the
@@ -538,8 +538,10 @@ interventions dominated: a static capability diff and an argument
 validator, both costing no additional LLM calls, account for the
 majority of the gain, while the one technique that added
 \emph{ungated} model calls actively hurt by injecting variance into a
-metric that punishes it. Limit-awareness, in our experience, is less a
-reasoning problem than a plumbing problem.
+metric that punishes it. Limit-awareness, in our experience, depends
+less on how well the model reasons than on whether the relevant
+constraint is placed in front of it, and checked mechanically, at the
+moment it acts.
 
 \bibliographystyle{named}
 \begin{thebibliography}{10}

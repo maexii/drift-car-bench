@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.29 (TeX Live 2026) (preloaded format=pdflatex 2026.4.3)  27 JUL 2026 02:05
+This is pdfTeX, Version 3.141592653-2.6-1.40.29 (TeX Live 2026) (preloaded format=pdflatex 2026.4.3)  27 JUL 2026 10:38
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -777,22 +777,22 @@ Underfull \hbox (badness 1163) in paragraph at lines 442--458
  []
 
 [3] [4]
-Underfull \hbox (badness 3229) in paragraph at lines 564--572
+Underfull \hbox (badness 3229) in paragraph at lines 566--574
 []\OT1/ptm/m/n/10 Johannes Kir-mayr, Lukas Stap-pen, and Elis-a-beth
  []
 
 
-Underfull \hbox (badness 1552) in paragraph at lines 585--590
+Underfull \hbox (badness 1552) in paragraph at lines 587--592
 []\OT1/ptm/m/n/10 Noah Shinn, Fed-erico Cas-sano, Ash-win Gopinath,
  []
 
 
-Underfull \hbox (badness 3815) in paragraph at lines 592--595
+Underfull \hbox (badness 3815) in paragraph at lines 594--597
 []\OT1/ptm/m/n/10 Brandon T. Willard and R[]emi Louf.  Ef-fi-cient
  []
 
 
-Underfull \hbox (badness 10000) in paragraph at lines 592--595
+Underfull \hbox (badness 10000) in paragraph at lines 594--597
 \OT1/ptm/m/n/10 guided gen-er-a-tion for large lan-guage mod-els.
  []
 
@@ -809,7 +809,7 @@ Package rerunfilecheck Info: File `report.out' has not changed.
 Here is how much of TeX's memory you used:
  22539 strings out of 467525
  426650 string characters out of 5418983
- 840410 words of memory out of 5000000
+ 840411 words of memory out of 5000000
  51038 multiletter control sequences out of 15000+600000
  656602 words of font info for 88 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
@@ -827,7 +827,7 @@ ve/2026/texmf-dist/fonts/type1/urw/courier/ucrr8a.pfb></usr/local/texlive/2026/
 texmf-dist/fonts/type1/urw/times/utmb8a.pfb></usr/local/texlive/2026/texmf-dist
 /fonts/type1/urw/times/utmr8a.pfb></usr/local/texlive/2026/texmf-dist/fonts/typ
 e1/urw/times/utmri8a.pfb>
-Output written on report.pdf (5 pages, 182856 bytes).
+Output written on report.pdf (5 pages, 182948 bytes).
 PDF statistics:
  200 PDF objects out of 1000 (max. 8388607)
  165 compressed objects within 2 object streams
