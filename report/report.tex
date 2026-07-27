@@ -16,6 +16,7 @@
 \usepackage{graphicx}
 \usepackage{amsmath}
 \usepackage{booktabs}
+\usepackage{array}
 \usepackage{tikz}
 \usetikzlibrary{shapes.geometric, arrows.meta, positioning, fit}
 
@@ -128,7 +129,8 @@ which is emitted once per baseline step.
 \subsection{Pipeline}
 
 Figure~\ref{fig:arch} shows the pipeline. Stage~\textcircled{1}
-generates a next action under a JSON response schema that forces the
+generates a next action under a JSON response schema
+\cite{willard2023guided} that forces the
 model to fill a \texttt{checks} object (\texttt{missing\_capability},
 \texttt{unspecified\_value\_source}, \texttt{scope\_ok}) \emph{before}
 naming an action, which acts as a short structured chain of thought.
@@ -137,7 +139,10 @@ violation raises a malformed-response error that triggers a retry
 carrying a targeted correction, but never on the final permitted
 attempt --- an inconsistent action is preferable to a turn error.
 
-Stage~\textcircled{2} is an LLM verifier, deliberately narrow: it runs
+Stage~\textcircled{2} is an LLM verifier --- the generate--critique--%
+revise loop of self-refinement
+\cite{madaan2023selfrefine,shinn2023reflexion} with an LLM judge
+\cite{zheng2023judging} as the critic, but deliberately narrow: it runs
 only on state-changing actions, uses low reasoning effort and a 512
 token cap, and returns \texttt{approve} or \texttt{revise} with
 problems. A risk gate suppresses it entirely in the common,
@@ -169,8 +174,8 @@ stage~\textcircled{1} action stands.
   \textbf{and}\\ at least 2 calls left?};
 \node[box, below=of rg] (s2) {\textcircled{2} \textbf{Verify} (1 call,
   low effort, 512 tok)};
-\node[box, below=of s2] (s3) {\textcircled{3} \textbf{Revise} (1 call,
-  only if \texttt{revise})};
+\node[box, below=of s2] (s3) {\textcircled{3} \textbf{Revise} (only if
+  \texttt{revise}; $\leq$ budget left)};
 \node[box, below=of s3, fill=black!8] (out) {emit A2A response
   \(+\) \texttt{turn\_metrics}};
 
@@ -194,9 +199,10 @@ stage~\textcircled{1} action stands.
 ($3+1+1$, boxed stages are the only LLM calls); common case $1$--$3$.
 \textbf{Parallel fan-out: 1} --- no stage issues concurrent calls, so
 nothing is exempt from the sequential count. Branches are the two
-gates; the only retry loop is the enforcement loop inside
-stage~\textcircled{1}, whose iterations are counted against the same
-budget.}
+gates. There is one retry loop, the enforcement loop inside
+stage~\textcircled{1}; stage~\textcircled{3} re-enters it with the
+remaining budget, and its iterations are counted against the same
+budget in both places.}
 \label{fig:arch}
 \end{figure}
 
@@ -207,11 +213,13 @@ is that every stage receives the \emph{remaining} budget, not a private
 allowance: stage~\textcircled{1} caps its attempts at
 $\min(\text{retries}+1,\ \text{budget})$; the verifier runs only if at
 least two calls remain (so that a revision it requests is always
-affordable); the revision receives exactly what is left. An optional
-completeness pass and a decline judge exist in the code but are
-disabled in the submitted configuration; both share the same guard, so
-the bound is independent of those toggles. Retries are counted as
-calls, which is conservative --- a lenient reading would exclude them.
+affordable); the revision receives exactly what is left, re-entering
+stage~\textcircled{1}'s enforcement loop under that reduced cap, so the
+split is not fixed ($1{+}1{+}3$ is as admissible as $3{+}1{+}1$). An
+optional completeness pass exists in the code but is disabled in the
+submitted configuration; it shares the same guard, so the bound is
+independent of that toggle. Retries are counted as calls, which is
+conservative --- a lenient reading would exclude them.
 
 \begin{table}[t]
 \centering
@@ -221,12 +229,14 @@ calls, which is conservative --- a lenient reading would exclude them.
 \midrule
 \textcircled{1} & Generate ($1 + 2$ enforcement retries) & 3 & 3 \\
 \textcircled{2} & Verify (gated: needs $\geq 2$ left)    & 1 & 4 \\
-\textcircled{3} & Revise (gated: budget $-$ used)        & 1 & \textbf{5} \\
+\textcircled{3} & Revise (budget $-$ used; re-enters \textcircled{1}) & 1 & \textbf{5} \\
 \bottomrule
 \end{tabular}
-\caption{Worst-case sequential calls per baseline step. Measured
-average token use in the submitted configuration is ${\sim}92$k per
-task against the 500k limit.}
+\caption{Worst-case sequential calls per baseline step; the ``Max''
+column is the value each stage can take \emph{in this path}, and every
+other path is bounded by the same total. Measured average token use in
+the submitted configuration is ${\sim}92$k per task against the 500k
+limit.}
 \label{tab:budget}
 \end{table}
 
@@ -253,9 +263,11 @@ Every argument of a state-changing call must appear literally in the
 conversation (user utterance or tool result); values that are invented
 or silently defaulted are rejected. A separate validator catches
 template placeholders (\texttt{\{\{...\}\}}, \texttt{<...>},
-\texttt{tbd}) that the model emits when chaining dependent calls. This
-second validator alone moved \textsc{base} from $62\%$ to $66$--$72\%$,
-mostly on multi-step route lookups.
+\texttt{tbd}) that the model emits when chaining dependent calls. The
+configuration that adds this second validator --- together with the
+toll notice below, which we did not measure separately --- moved
+\textsc{base} from $62\%$ to $66$--$72\%$, mostly on multi-step route
+lookups.
 
 \paragraph{Capability-catalog notice.}
 The agent ships a static catalog of the tools and parameters that are
@@ -308,24 +320,30 @@ $+$ placeholder, toll     & 66 & 58 & 52 & \textbf{58.7} \\
 \end{tabular}
 \caption{Pass$^3$ (\%) on the public test split, 125 tasks
 $\times$ 3 trials, temperature $0$. Rows are cumulative
-configurations, each measured in a separate full run.}
+configurations, each measured in a separate full run. The shared
+budget of Section~2.3 was added to the code after these runs; a
+per-step audit of their logs finds at most five sequential calls
+everywhere except one step of the $58.7\%$ run, which used six
+($0.05\%$ of its 1953 steps). The confirmation run is within the bound
+throughout.}
 \label{tab:results}
 \end{table}
 
 Table~\ref{tab:results} reports full runs on the public test split
 (125 tasks, three trials, temperature $0$; Pass$^3$ is averaged over
 the three task families). Every row is a separate full evaluation.
-Reaching the final configuration took 16 such runs --- roughly an hour
-of wall-clock time each --- alongside 30 shorter runs on task subsets,
-over eight days. We report full-run numbers exclusively: as
+Reaching the final configuration took 16 such runs --- median $75$
+minutes of wall-clock time each, with provider throttling stretching
+four of them past two hours --- alongside 27 shorter runs on task
+subsets, over eight days. We report full-run numbers exclusively: as
 Section~\ref{sec:noise} shows, the short runs we used for iteration
 were systematically misleading, and several configurations that looked
 best on a subset lost on the full split. The stack raises Pass$^3$
 from $43.3\%$ to $58.7\%$, with the best configuration confirmed twice
-in the $56$--$59\%$ range. For context, the published CAR-bench
-leaderboard places the same open model at $28\%$ and reports $41\%$ for
-\texttt{gemini-2.5-flash-thinking} and $54\%$ for
-\texttt{GPT-5-thinking}; our figures are not directly comparable
+in the $56$--$59\%$ range. For context, the baseline table published
+with CAR-bench \cite{kirmayr2026carbench} places the same open model at
+$28\%$ and reports $41\%$ for Gemini-2.5-flash (thinking) and $54\%$
+for GPT-5 (thinking); our figures are not directly comparable
 (different split conditions and user-simulator routing), but the gap
 between $28\%$ and $58.7\%$ for one and the same open model is the
 result we consider meaningful.
@@ -355,7 +373,9 @@ seven attempts we closed it as a model-capability limit.
 (iii)~A \emph{completeness verifier} raised Pass@3 to $80\%$ while
 Pass$^3$ \emph{fell} from $52.0\%$ to $44.7\%$: 109 self-second-guessing
 revisions turned thirteen stable tasks flaky --- a reminder that under
-Pass$^3$, variance is a first-class cost. (iv)~An \emph{enrichment
+Pass$^3$, variance is a first-class cost, and consistent with reports
+that models do not reliably self-correct without an external signal
+\cite{huang2024selfcorrect}. (iv)~An \emph{enrichment
 rule} for user preferences gained one task and broke our most stable
 marker task.
 
@@ -363,7 +383,7 @@ These conclusions are only possible because we first measured the noise
 floor. At temperature $0$ the three trials of a run are near-clones, so
 borderline tasks flip at the \emph{run} level rather than the trial
 level; an identical configuration measured twice on a 15-task slice
-produced $66\%$ and $46\%$. We therefore accept a change only when it
+produced $66.7\%$ and $46.7\%$. We therefore accept a change only when it
 is deterministic (a $0/x \rightarrow x/x$ flip) or reproduces across at
 least two independent full runs, and we treat $\pm 8$pp on
 \textsc{disambiguation} as noise. A second, non-obvious confound: the
@@ -393,7 +413,7 @@ reasoning-bound classes barely move.
 
 \begin{table}[t]
 \centering\small
-\begin{tabular}{@{}lp{56mm}@{}}
+\begin{tabular}{@{}l>{\raggedright\arraybackslash}p{56mm}@{}}
 \toprule
 Enabled & \texttt{MAX\_CALLS\_PER\_STEP}=5, \texttt{VERIFIER},
   \texttt{VERIFIER\_GATE}, \texttt{ENFORCE\_CHECKS},
@@ -401,25 +421,31 @@ Enabled & \texttt{MAX\_CALLS\_PER\_STEP}=5, \texttt{VERIFIER},
   \texttt{CATALOG\_NOTICE}, \texttt{TOLL\_NOTICE}\\
 \midrule
 Disabled & \texttt{COMPLETENESS}, \texttt{WORKFLOWS},
-  \texttt{RESPONSE\_SCAFFOLD}, \texttt{DECLINE\_JUDGE}\\
+  \texttt{RESPONSE\_SCAFFOLD}\\
 \midrule
-Sampling & temperature $0$, $2048$ completion tokens,
-  $2$ enforcement retries, verifier effort \texttt{low}\\
+Sampling & \texttt{EXECUTOR\_MODEL}=\texttt{gpt-oss-120b},
+  \texttt{EXECUTOR\_REASONING\_EFFORT}=\texttt{medium},
+  \texttt{VERIFIER\_REASONING\_EFFORT}=\texttt{low},
+  \texttt{TEMPERATURE}=0,
+  \texttt{MAX\_COMPLETION\_TOKENS}=2048,
+  \texttt{LLM\_MALFORMED\_RETRIES}=2\\
 \bottomrule
 \end{tabular}
-\caption{Submitted configuration. Every entry is an environment
-variable with the stated value as its default in the submitted
-\texttt{scenario.toml}, so the configuration is reproduced even when
-nothing is injected but the API key.}
+\caption{Submitted configuration. Every name carries the prefix
+\texttt{TRACK2\_} and is an environment variable whose default in the
+submitted \texttt{scenario.toml} is the value shown, so the
+configuration is reproduced even when nothing is injected but the API
+key.}
 \label{tab:config}
 \end{table}
 
-The submitted agent uses Cerebras-hosted \texttt{gpt-oss-120b}
-\cite{openai2025gptoss} through
-the Cerebras SDK, with all model names, routes, API bases, service
-tiers, reasoning-effort selectors and sampling parameters exposed as
-environment variables in the submitted \texttt{scenario.toml}; the
-organizers need only supply the API key. The agent uses exclusively
+The submitted agent uses Cerebras-hosted \cite{cerebras2026}
+\texttt{gpt-oss-120b} \cite{openai2025gptoss} through
+the Cerebras SDK, with the model name, service tier, reasoning-effort
+selectors, sampling parameters and every toggle of Table~\ref{tab:config}
+exposed as environment variables in the submitted
+\texttt{scenario.toml}; the client pins the Cerebras production
+endpoint, so the organizers need only supply the API key. The agent uses exclusively
 evaluator-provided inputs --- system and policy text, transcript, tool
 definitions, tool results --- plus the static public-domain catalog
 described in Section~3. It does not execute CAR-bench tools, read
@@ -430,21 +456,41 @@ and digest-pinned; it was validated end-to-end against the official
 evaluator image via the repository's GHCR validation path.
 Table~\ref{tab:config} lists the exact submitted configuration.
 
+\paragraph{Which code produced which number.}
+The submitted image carries the budget-enforced agent, whose sources
+are identical to those of one further full run made after the guard
+landed; that run scored $47.3\%$ Pass$^3$ ($60/42/40$). We report it
+rather than hide it, but it does not measure a cost of the cap: the
+guard never bound in that run (zero budget-limited skips), and its
+per-step call profile is the one the earlier $56.7\%$ run already had,
+which stayed within five calls throughout. The
+difference is run-level variance of the kind quantified in
+Section~\ref{sec:noise}, which is also why we state the $56$--$59\%$
+band rather than the single best number.
+
 \paragraph{Assumptions behind the compute figures.}
 Token counts are what the agent reports through A2A: prompt,
 completion and thinking tokens summed over \emph{all} internal LLM
 calls of a turn, including calls that were discarded by an enforcement
 retry, and including the verifier and revision calls. They are
 therefore an upper bound on what a lenient accounting would report.
-The ${\sim}92$k figure is the mean over all 375 task-trials of the best
-run; the median is $82$k and the single most expensive trial reached
-$584$k, so the average sits comfortably under the 500k limit while
-individual pathological conversations can exceed it. Wall-clock
-latency is \emph{not} a meaningful cost comparison in our data: runs
-were executed across several days on a shared provider tier, and
-between-day variation in provider load exceeded the effect of our
-configuration changes. We therefore quote token overhead rather than
-latency overhead throughout.
+The ${\sim}92$k figure is the mean over the 373 of 375 task-trials of
+the best run that returned token counts (two failed with an evaluator
+error and report zero); the median is $82$k and the single most
+expensive trial reached $584$k, so the average sits comfortably under
+the 500k limit while individual pathological conversations can exceed
+it. Wall-clock latency is \emph{not} a meaningful basis for
+\emph{comparing} configurations in our data: runs were executed across
+several days on a shared provider tier, and between-day variation in
+provider load exceeded the effect of our configuration changes. The
+absolute figures are still informative, because the evaluator meters
+agent-side LLM time itself: the best run spends $4.3$s of LLM time per
+task-trial (median $3.5$s) and $0.87$s per A2A round, against $5.2$s
+and $1.05$s for the prompt-only baseline, and the confirmation run
+reproduces this ($4.3$s, $0.91$s). At this reasoning effort the gated
+stack therefore buys its reliability without a latency penalty. We
+nevertheless quote token overhead rather than latency overhead as our
+cost measure throughout.
 
 Two caveats belong on the record. First, the capability catalog of
 Section~\ref{sec:techniques} is prior knowledge: it is compiled offline
@@ -496,12 +542,23 @@ metric that punishes it. Limit-awareness, in our experience, is less a
 reasoning problem than a plumbing problem.
 
 \bibliographystyle{named}
-\begin{thebibliography}{1}
+\begin{thebibliography}{10}
 
 \bibitem{a2a2026}
 A2A~Project.
 \newblock Agent2{A}gent ({A}2{A}) protocol, version 1.0.
 \newblock The Linux Foundation, 2026. \url{https://a2a-protocol.org/v1.0.0/}.
+
+\bibitem{cerebras2026}
+Cerebras~Systems.
+\newblock Cerebras inference: wafer-scale inference {API}.
+\newblock \url{https://inference.cerebras.ai/}, 2026.
+
+\bibitem{huang2024selfcorrect}
+Jie Huang, Xinyun Chen, Swaroop Mishra, et~al.
+\newblock Large language models cannot self-correct reasoning yet.
+\newblock In \emph{International Conference on Learning Representations
+  (ICLR)}, 2024.
 
 \bibitem{kirmayr2026carbench}
 Johannes Kirmayr, Lukas Stappen, and Elisabeth Andr\'e.
@@ -510,18 +567,43 @@ Johannes Kirmayr, Lukas Stappen, and Elisabeth Andr\'e.
 \newblock In \emph{Proceedings of the 64th Annual Meeting of the Association
   for Computational Linguistics (Volume 1: Long Papers)}, pages 40599--40618,
   San Diego, California, United States, 2026. Association for Computational
-  Linguistics.
+  Linguistics. doi:10.18653/v1/2026.acl-long.1886,
+  \url{https://aclanthology.org/2026.acl-long.1886/}.
+
+\bibitem{madaan2023selfrefine}
+Aman Madaan, Niket Tandon, Prakhar Gupta, et~al.
+\newblock Self-refine: Iterative refinement with self-feedback.
+\newblock In \emph{Advances in Neural Information Processing Systems
+  (NeurIPS)}, 2023.
 
 \bibitem{openai2025gptoss}
 OpenAI.
 \newblock gpt-oss-120b \& gpt-oss-20b model card.
 \newblock arXiv:2508.10925, 2025.
 
+\bibitem{shinn2023reflexion}
+Noah Shinn, Federico Cassano, Ashwin Gopinath, Karthik Narasimhan, and
+  Shunyu Yao.
+\newblock Reflexion: Language agents with verbal reinforcement learning.
+\newblock In \emph{Advances in Neural Information Processing Systems
+  (NeurIPS)}, 2023.
+
+\bibitem{willard2023guided}
+Brandon~T. Willard and R\'emi Louf.
+\newblock Efficient guided generation for large language models.
+\newblock arXiv:2307.09702, 2023.
+
 \bibitem{yao2024taubench}
 Shunyu Yao, Noah Shinn, Pedram Razavi, and Karthik Narasimhan.
 \newblock $\tau$-bench: A benchmark for tool-agent-user interaction in
   real-world domains.
 \newblock arXiv:2406.12045, 2024.
+
+\bibitem{zheng2023judging}
+Lianmin Zheng, Wei-Lin Chiang, Ying Sheng, et~al.
+\newblock Judging {LLM}-as-a-judge with {MT}-bench and chatbot arena.
+\newblock In \emph{Advances in Neural Information Processing Systems
+  (NeurIPS) Datasets and Benchmarks Track}, 2023.
 
 \end{thebibliography}
 

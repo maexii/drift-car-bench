@@ -1,0 +1,56 @@
+\relax 
+\providecommand\hyper@newdestlabel[2]{}
+\providecommand\HyField@AuxAddToFields[1]{}
+\providecommand\HyField@AuxAddToCoFields[2]{}
+\citation{kirmayr2026carbench}
+\citation{yao2024taubench}
+\citation{a2a2026}
+\citation{willard2023guided}
+\@writefile{toc}{\contentsline {section}{\numberline {1}Introduction}{1}{section.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {2}Architecture and Call-Budget Compliance}{1}{section.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.1}Unit of accounting}{1}{subsection.2.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.2}Pipeline}{1}{subsection.2.2}\protected@file@percent }
+\citation{madaan2023selfrefine}
+\citation{shinn2023reflexion}
+\citation{zheng2023judging}
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces One baseline LLM step. \textbf  {Maximum sequential depth: 5} ($3+1+1$, boxed stages are the only LLM calls); common case $1$--$3$. \textbf  {Parallel fan-out: 1} --- no stage issues concurrent calls, so nothing is exempt from the sequential count. Branches are the two gates. There is one retry loop, the enforcement loop inside stage~\textcircled {1}; stage~\textcircled {3} re-enters it with the remaining budget, and its iterations are counted against the same budget in both places.}}{2}{figure.caption.1}\protected@file@percent }
+\providecommand*\caption@xref[2]{\@setref\relax\@undefined{#1}}
+\newlabel{fig:arch}{{1}{2}{One baseline LLM step. \textbf {Maximum sequential depth: 5} ($3+1+1$, boxed stages are the only LLM calls); common case $1$--$3$. \textbf {Parallel fan-out: 1} --- no stage issues concurrent calls, so nothing is exempt from the sequential count. Branches are the two gates. There is one retry loop, the enforcement loop inside stage~\textcircled {1}; stage~\textcircled {3} re-enters it with the remaining budget, and its iterations are counted against the same budget in both places}{figure.caption.1}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.3}Why the bound holds}{2}{subsection.2.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {3}Reliability Techniques}{2}{section.3}\protected@file@percent }
+\newlabel{sec:techniques}{{3}{2}{Reliability Techniques}{section.3}{}}
+\@writefile{toc}{\contentsline {paragraph}{Zero-call deterministic guards.}{2}{section*.3}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces Worst-case sequential calls per baseline step; the ``Max'' column is the value each stage can take \emph  {in this path}, and every other path is bounded by the same total. Measured average token use in the submitted configuration is ${\sim }92$k per task against the 500k limit.}}{2}{table.caption.2}\protected@file@percent }
+\newlabel{tab:budget}{{1}{2}{Worst-case sequential calls per baseline step; the ``Max'' column is the value each stage can take \emph {in this path}, and every other path is bounded by the same total. Measured average token use in the submitted configuration is ${\sim }92$k per task against the 500k limit}{table.caption.2}{}}
+\@writefile{toc}{\contentsline {paragraph}{Argument-level anti-hallucination.}{2}{section*.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Capability-catalog notice.}{2}{section*.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Gated verification.}{2}{section*.6}\protected@file@percent }
+\citation{kirmayr2026carbench}
+\citation{huang2024selfcorrect}
+\citation{cerebras2026}
+\citation{openai2025gptoss}
+\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Pass$^3$ (\%) on the public test split, 125 tasks $\times $ 3 trials, temperature $0$. Rows are cumulative configurations, each measured in a separate full run. The shared budget of Section~2.3 was added to the code after these runs; a per-step audit of their logs finds at most five sequential calls everywhere except one step of the $58.7\%$ run, which used six ($0.05\%$ of its 1953 steps). The confirmation run is within the bound throughout.}}{3}{table.caption.7}\protected@file@percent }
+\newlabel{tab:results}{{2}{3}{Pass$^3$ (\%) on the public test split, 125 tasks $\times $ 3 trials, temperature $0$. Rows are cumulative configurations, each measured in a separate full run. The shared budget of Section~2.3 was added to the code after these runs; a per-step audit of their logs finds at most five sequential calls everywhere except one step of the $58.7\%$ run, which used six ($0.05\%$ of its 1953 steps). The confirmation run is within the bound throughout}{table.caption.7}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {4}Results}{3}{section.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {5}Negative Results and Measurement Noise}{3}{section.5}\protected@file@percent }
+\newlabel{sec:noise}{{5}{3}{Negative Results and Measurement Noise}{section.5}{}}
+\@writefile{toc}{\contentsline {paragraph}{Where the remaining errors live.}{3}{section*.8}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {6}Compliance and Reproducibility}{3}{section.6}\protected@file@percent }
+\bibstyle{named}
+\bibcite{a2a2026}{1}
+\bibcite{cerebras2026}{2}
+\bibcite{huang2024selfcorrect}{3}
+\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces Submitted configuration. Every name carries the prefix \texttt  {TRACK2\_} and is an environment variable whose default in the submitted \texttt  {scenario.toml} is the value shown, so the configuration is reproduced even when nothing is injected but the API key.}}{4}{table.caption.9}\protected@file@percent }
+\newlabel{tab:config}{{3}{4}{Submitted configuration. Every name carries the prefix \texttt {TRACK2\_} and is an environment variable whose default in the submitted \texttt {scenario.toml} is the value shown, so the configuration is reproduced even when nothing is injected but the API key}{table.caption.9}{}}
+\@writefile{toc}{\contentsline {paragraph}{Which code produced which number.}{4}{section*.10}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Assumptions behind the compute figures.}{4}{section*.11}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {7}Limitations and Future Work}{4}{section.7}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {8}Conclusion}{4}{section.8}\protected@file@percent }
+\bibcite{kirmayr2026carbench}{4}
+\bibcite{madaan2023selfrefine}{5}
+\bibcite{openai2025gptoss}{6}
+\bibcite{shinn2023reflexion}{7}
+\bibcite{willard2023guided}{8}
+\bibcite{yao2024taubench}{9}
+\bibcite{zheng2023judging}{10}
+\gdef \@abspage@last{5}
